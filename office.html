@@ -185,7 +185,7 @@ const ELEV={x:0.45,y:8.5}, USER_SEAT={x:12.5,y:10.7};
 
 // ───────── three.js 기본 ─────────
 const stage=document.getElementById('stage');
-const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,stencil:true});
 renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -509,11 +509,13 @@ function buildHuman(c){
   return {root,mats,hip,legs,torso,arms,head,mouth,kind:'human',top:1.9,sitTop:1.56};
 }
 // Clawd: Claude Code 마스코트. 터미널 그림(▐▛███▜▌ / ▝▜█████▛▘ / ▘▘ ▝▝)의 4분할 블록을 한 칸씩 복셀로 옮김
-const CLAWD='#D97757',CLAWD_PW=0.075,CLAWD_PH=0.12,CLAWD_D=0.6,CLAWD_SIT=0.37;
+const CLAWD='#D97757',CLAWD_PW=0.075,CLAWD_PH=0.12,CLAWD_D=0.6,CLAWD_SIT=0.37,CLAWD_SCALE=1.4;
 function buildClawd(c){
-  const root=new THREE.Group(),mats=[];const m=(color)=>{const x=charMat(color);mats.push(x);return x;};
-  const body=m(CLAWD),eyeM=m('#1a1412'),PW=CLAWD_PW,PH=CLAWD_PH,D=CLAWD_D,sc=c.data.sub?0.82:1;
-  body.emissive.set(CLAWD);body.emissiveIntensity=0.22;  // 그늘진 앞면도 Clawd 색이 나도록
+  const root=new THREE.Group(),mats=[];
+  const m=(color)=>{const x=charMat(color);  // 스텐실 1: 가림 실루엣이 자기 몸 위에는 안 그려지도록
+    Object.assign(x,{stencilWrite:true,stencilRef:1,stencilFunc:THREE.AlwaysStencilFunc,stencilZPass:THREE.ReplaceStencilOp});mats.push(x);return x;};
+  const body=m(CLAWD),eyeM=m('#1a1412'),PW=CLAWD_PW,PH=CLAWD_PH,D=CLAWD_D,sc=(c.data.sub?0.85:1)*CLAWD_SCALE;
+  body.emissive.set(CLAWD);body.emissiveIntensity=0.32;  // 그늘진 앞면도 Clawd 색이 나도록
   root.scale.setScalar(sc);
   // 칸(col 0~18, 가운데 9) · 줄(row 0=발끝) 좌표로 상자
   const px=(g,c0,c1,r0,r1,z0,z1,mt,x0=0,y0=0)=>{const o=mesh(BOX,mt,g);o.scale.set((c1-c0)*PW,(r1-r0)*PH,z1-z0);
@@ -745,9 +747,18 @@ function overlays(t,list){
 }
 
 // ───────── 루프 ─────────
+// Clawd 모드: 벽·가구에 가린 부분은 반투명 실루엣으로 한 번 더 그림 (스텐실로 한 겹만, 자기 몸 위는 제외)
+const XRAY=new THREE.MeshBasicMaterial({color:CLAWD,transparent:true,opacity:0.55,depthWrite:false,depthFunc:THREE.GreaterDepth,
+  stencilWrite:true,stencilRef:1,stencilFunc:THREE.NotEqualStencilFunc,stencilZPass:THREE.ReplaceStencilOp});
+renderer.autoClear=false;
+function render(){renderer.clear();renderer.render(scene,camera);
+  if(mode!=='mascot'||!chars.size)return;
+  const um=userChar.model;world.visible=false;if(um)um.root.visible=false;scene.overrideMaterial=XRAY;renderer.shadowMap.autoUpdate=false;
+  renderer.render(scene,camera);
+  world.visible=true;if(um)um.root.visible=true;scene.overrideMaterial=null;renderer.shadowMap.autoUpdate=true;}
 let prevT=performance.now();
 function frame(now){const dt=Math.min(0.05,(now-prevT)/1000);prevT=now;const t=now/1000;
-  update(dt,t);renderer.render(scene,camera);overlays(t,[...chars.values(),userChar]);requestAnimationFrame(frame);}
+  update(dt,t);render();overlays(t,[...chars.values(),userChar]);requestAnimationFrame(frame);}
 resize();requestAnimationFrame(frame);
 function focusOn(id){focusId=id;userMoved=true;if(zoomLv<2.6)zoomLv=2.6;}
 document.getElementById('people').addEventListener('click',e=>{const p=e.target.closest('[data-id]');if(p)focusOn(p.dataset.id);});
