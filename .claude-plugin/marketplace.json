@@ -1,0 +1,14 @@
+{
+  "name": "office-mods",
+  "description": "Claude Office: Claude Code 세션을 사무실로 보여주는 mod",
+  "owner": {
+    "name": "VSM"
+  },
+  "plugins": [
+    {
+      "name": "agent-office",
+      "source": "./plugins/agent-office",
+      "description": "Claude가 지금 하는 일을 Clawd가 일하는 사무실로 채팅 옆 패널에 보여줍니다"
+    }
+  ]
+}

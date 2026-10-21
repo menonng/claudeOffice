@@ -40,10 +40,22 @@ python office.py --root D:/somewhere/.claude/projects --user VSM
 
 드래그로 이동, 휠·핀치로 확대/축소, ⌂ 버튼으로 처음 시점.
 
+## Claude Code 안에서 보기 (mod)
+
+웹 대시보드 대신 Claude Code 채팅 옆 패널에 사무실을 띄우는 mod `agent-office`도 있습니다. 서버 없이 세션 이벤트를 직접 받아, 데스크톱·모바일·VS Code에서는 아이소메트릭 2D 사무실로, CLI에서는 방마다 터미널 Clawd 그림으로 보여줍니다.
+
+```
+/plugin install agent-office --marketplace menonng/claudeoffice
+```
+
+자세한 내용은 [plugins/agent-office/README.md](plugins/agent-office/README.md).
+
 ## 파일
 
 ```
 office.py              서버 (tail + SSE)
 office.html            3D 화면
 vendor/three.*.js      three.js r186 (MIT, vendor/three-LICENSE.txt)
+.claude-plugin/        마켓플레이스 (agent-office mod 목록)
+plugins/agent-office/  Claude Code mod
 ```
