@@ -15,7 +15,7 @@ Claude Code 프롬프트에서:
 
 ## 화면
 
-- **데스크톱 · 모바일 · VS Code**: 아이소메트릭 2D 사무실(SVG). Clawd가 도구에 맞는 방으로 걸어가 일하고, 머리 위 말풍선에 하는 일이 나옵니다. 고민 중이면 💭, 도구가 실패하면 😣 막힘(빨간 풍선, 몸 떨림).
+- **데스크톱 · 모바일 · VS Code**: 3D 웹 대시보드에서 구워 낸 사무실 그림 위에 3D Clawd 스프라이트와 이름표·말풍선을 얹은 SVG. Clawd가 도구에 맞는 방으로 걸어가 일하고(일하는 동안 포즈가 번갈아 바뀜), 고민 중이면 눈이 위로 가며 💭, 도구가 실패하면 😣 막힘(빨간 풍선, 몸 떨림). 그림은 `tools/bake-mod-assets`로 다시 구울 수 있습니다.
 - **CLI(터미널)**: 방마다 테두리 상자, 그 안에 터미널 Clawd 그림(`▐▛███▜▌`)과 이름·하는 일. 패널 폭에 따라 한 줄에 4 · 2 · 1개 방.
 - 아래에 최근 활동 로그 6줄.
 
@@ -37,7 +37,8 @@ Claude Code 프롬프트에서:
 ```
 .claude-plugin/plugin.json   매니페스트
 hooks/register.tsx           이벤트 훅과 패널 그리기
-hooks/office.ts              평면도 · 도구→구역 · SVG
+hooks/office.ts              도구→구역 · 자리 · SVG 그리기
+hooks/assets.ts              구워 둔 배경 · Clawd 스프라이트 · 자리 좌표 (자동 생성)
 hooks/office.test.tsx        claude plugin test 로 돌리는 테스트
 types/index.d.ts             $.state 계약
 ```

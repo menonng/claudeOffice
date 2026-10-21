@@ -1,5 +1,6 @@
-// 사무실 평면도 · 도구 → 구역 매핑 · SVG 그리기 (화면이 있는 데스크톱/모바일/에디터용)
+// 사무실 구역 · 도구 → 구역 매핑 · SVG 그리기 (화면이 있는 데스크톱/모바일/에디터용)
 import type { Office, Room, Worker } from '../types'
+import { BG, BG_H, BG_W, SEATS, SPRITES, SPRITE_ANCHOR, SPRITE_H, SPRITE_W } from './assets'
 
 export const PAL = {
   red: '#FF0045', orange: '#FF7E00', yellow: '#FFCC11', green: '#55BB44',
@@ -7,32 +8,20 @@ export const PAL = {
 }
 export const SUB_COLORS = [PAL.green, PAL.purple, PAL.sky, PAL.red, PAL.orange, PAL.pink, PAL.yellow]
 export const CLAWD = '#D97757'
-const EYE = '#1a1412'
 
-type RoomDef = { x: number; y: number; w: number; d: number; name: string; color: string; floor: string; what: string }
+type RoomDef = { name: string; color: string; what: string }
 export const ROOMS: Record<Room, RoomDef> = {
-  meeting: { x: 0, y: 0, w: 7, d: 7, name: '회의실', color: PAL.green, floor: '#dbe7d3', what: '계획 · 할 일 · 스킬' },
-  library: { x: 7, y: 0, w: 7, d: 7, name: '자료실', color: PAL.orange, floor: '#e9d5b4', what: '파일 읽기 · 검색' },
-  dev: { x: 14, y: 0, w: 16, d: 10, name: '개발실', color: PAL.blue, floor: '#d9e0ee', what: '코드 작성 · 수정' },
-  elevator: { x: 0, y: 7, w: 7, d: 3, name: '엘리베이터 홀', color: PAL.sky, floor: '#ecebe4', what: '서브에이전트 출퇴근' },
-  lounge: { x: 0, y: 10, w: 7, d: 7, name: '라운지', color: PAL.pink, floor: '#f1dfd3', what: '휴식 · 다음 지시 대기' },
-  mydesk: { x: 8.6, y: 10.4, w: 7, d: 3.9, name: '내 자리', color: PAL.yellow, floor: '#f6e7b4', what: '질문 · 에이전트 호출 · 보고' },
-  server: { x: 22, y: 12, w: 8, d: 6, name: '서버실', color: PAL.purple, floor: '#cfcadf', what: '명령 실행 · git' },
-  info: { x: 10, y: 15.5, w: 10, d: 6.5, name: '정보검색실', color: PAL.sky, floor: '#d5ece9', what: '웹 · 외부 도구' },
+  meeting: { name: '회의실', color: PAL.green, what: '계획 · 할 일 · 스킬' },
+  library: { name: '자료실', color: PAL.orange, what: '파일 읽기 · 검색' },
+  dev: { name: '개발실', color: PAL.blue, what: '코드 작성 · 수정' },
+  elevator: { name: '엘리베이터 홀', color: PAL.sky, what: '서브에이전트 출퇴근' },
+  lounge: { name: '라운지 · 탕비실', color: PAL.pink, what: '휴식 · 다음 지시 대기' },
+  mydesk: { name: '내 자리', color: PAL.yellow, what: '질문 · 에이전트 호출 · 보고' },
+  server: { name: '서버실', color: PAL.purple, what: '명령 실행 · git' },
+  info: { name: '정보검색실', color: PAL.sky, what: '웹 · 외부 도구' },
 }
 // 터미널 격자에 놓는 순서
 export const ROOM_ORDER: Room[] = ['meeting', 'library', 'dev', 'server', 'lounge', 'mydesk', 'info', 'elevator']
-
-const SLOTS: Record<Room, [number, number][]> = {
-  meeting: [[2.3, 2.05], [3.6, 2.05], [4.9, 2.05], [2.3, 4.75], [3.6, 4.75], [4.9, 4.75]],
-  library: [[8.9, 5.3], [10.3, 5.3], [11.7, 5.3], [8.3, 1.6], [10.5, 1.6], [12.7, 1.6]],
-  dev: [0, 1, 2, 3, 4, 5, 6, 7, 8].flatMap(k => [[15.825 + k * 1.65, 3.6], [15.825 + k * 1.65, 7.2]] as [number, number][]),
-  server: [[23.9, 14.0], [25.3, 14.0], [26.7, 14.0], [28.1, 14.0], [23.9, 17.0], [25.3, 17.0]],
-  info: [[11.2, 16.9], [13, 16.9], [16.8, 16.9], [18.6, 16.9], [12, 20.15], [15, 20.15]],
-  mydesk: [[12.5, 13.1], [11.0, 13.3], [14.0, 13.3], [9.8, 13.8], [15, 13.8]],
-  lounge: [[2.4, 12.9], [3.7, 12.9], [1.25, 13.6], [4.0, 15.4], [5.2, 14.6]],
-  elevator: [[1.6, 8.5], [2.6, 7.9], [2.6, 9.2]],
-}
 
 const LIBRARY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead'])
 const WEB_TOOLS = new Set(['WebFetch', 'WebSearch', 'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool'])
@@ -73,173 +62,117 @@ export function toolDetail(name: string, input: Record<string, unknown>): string
   return label
 }
 
-/** 같은 방 사람들에게 자리를 나눠 줌 */
+
+/** 같은 방 사람들에게 자리를 나눠 줌 (배경 그림의 px 좌표) */
 export function seats(workers: Worker[]): Map<string, [number, number]> {
   const out = new Map<string, [number, number]>()
   const count: Partial<Record<Room, number>> = {}
   for (const w of workers) {
     const i = count[w.room] ?? 0
     count[w.room] = i + 1
-    const sl = SLOTS[w.room]
-    const s = sl[i % sl.length] ?? [ROOMS[w.room].x + 1, ROOMS[w.room].y + 1]
-    const lap = Math.floor(i / sl.length) * 0.4
-    out.set(w.id, [s[0] + lap, s[1] + lap])
+    const sl = SEATS[w.room]
+    const s = sl[i % sl.length] ?? [BG_W / 2, BG_H / 2]
+    const lap = Math.floor(i / sl.length) * 8
+    out.set(w.id, [s[0] + lap, s[1] + lap / 2])
   }
   return out
 }
 
-// ───────── SVG (아이소메트릭 2D) ─────────
+// ───────── SVG: 구워 둔 3D 배경 + Clawd 스프라이트, 그 위에 이름표·말풍선 ─────────
 
-const S = 13, C = 0.866
-const iso = (x: number, y: number, z = 0): [number, number] => [(x - y) * C * S, (x + y) * 0.5 * S - z * S * 0.82]
-const pts = (list: [number, number][]) => list.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ')
 const esc = (s: string) => s.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m] as string)
-
-function shade(hex: string, amt: number): string {
-  const n = parseInt(hex.slice(1, 7), 16)
-  const t = amt > 0 ? 255 : 0, a = Math.abs(amt)
-  const ch = (v: number) => Math.round(v + (t - v) * a)
-  return '#' + ((1 << 24) | (ch(n >> 16) << 16) | (ch((n >> 8) & 255) << 8) | ch(n & 255)).toString(16).slice(1)
-}
-
-/** 높이 h의 상자: 윗면 + 앞쪽 두 면 (+y, +x) */
-function isoBox(x: number, y: number, w: number, d: number, h: number, color: string): string {
-  const top = pts([iso(x, y, h), iso(x + w, y, h), iso(x + w, y + d, h), iso(x, y + d, h)])
-  const left = pts([iso(x, y + d, h), iso(x + w, y + d, h), iso(x + w, y + d, 0), iso(x, y + d, 0)])
-  const right = pts([iso(x + w, y, h), iso(x + w, y + d, h), iso(x + w, y + d, 0), iso(x + w, y, 0)])
-  return `<polygon points="${left}" fill="${shade(color, -0.12)}"/><polygon points="${right}" fill="${shade(color, -0.25)}"/><polygon points="${top}" fill="${color}"/>`
-}
-
-type Thing = { depth: number; svg: string }
-
-
-function furniture(): Thing[] {
-  const out: Thing[] = []
-  const b = (x: number, y: number, w: number, d: number, h: number, c: string) => out.push({ depth: x + w + y + d, svg: isoBox(x, y, w, d, h, c) })
-  b(1.6, 2.6, 4, 1.6, 0.75, '#d4bb93')
-  for (let i = 0; i < 3; i++) b(7.3 + i * 2.2, 0.1, 2, 0.6, 2.2, '#7f5232')
-  b(8.2, 3.6, 4, 1.1, 0.75, '#c9a06c')
-  for (const row of [2.0, 5.6]) {
-    b(15, row, 14.6, 1, 0.75, '#eef0f6')
-    b(15, row, 14.6, 0.08, 1.25, '#6f8fe0')
-    for (let k = 0; k < 9; k++) b(15.5 + k * 1.65, row + 0.25, 0.65, 0.06, 0.4 + 0.75, '#20232f')
-  }
-  for (const row of [12.6, 15.4]) for (let i = 0; i < 5; i++) b(23.4 + i * 1.4, row, 1, 0.9, 2.2, '#1c2233')
-  b(10.4, 11.25, 4.3, 0.95, 0.78, '#2c3a6b')
-  b(14.7, 10.2, 0.95, 2, 0.78, '#2c3a6b')
-  b(2.9, 15.8, 2.6, 0.85, 0.6, '#8a5a3c')
-  b(3.8, 10.08, 1, 0.75, 1.9, PAL.red)
-  b(3.3, 14.6, 1.6, 0.8, 0.42, '#c9a06c')
-  for (const x of [10.9, 12.7, 16.5, 18.3]) b(x, 15.9, 0.6, 0.5, 1.75, PAL.purple)
-  for (const x of [11.2, 14.2, 17.2]) b(x, 18.9, 1.6, 0.8, 0.75, '#f2f3f8')
-  b(0.2, 17.4, 1.2, 0.8, 0.7, '#e4e6ec')
-  return out
-}
-
-/** 터미널 그림(▐▛███▜▌ / ▝▜█████▛▘ / ▘▘ ▝▝)을 칸 단위 사각형으로 옮긴 Clawd. 칸 0~18, 줄 0~5 */
-const CLAWD_PIXELS: [number, number, number, number][] = [[3, 0, 12, 4], [1, 2, 2, 1], [15, 2, 2, 1], [4, 4, 1, 1], [6, 4, 1, 1], [11, 4, 1, 1], [13, 4, 1, 1]]
-
-function clawd(w: Worker, sx: number, sy: number, from: [number, number] | undefined): string {
-  const scale = w.isSub ? 0.85 : 1
-  const pw = 2.8 * scale, ph = 4.2 * scale
-  const ox = -9 * pw, oy = -5 * ph // 발끝 가운데가 (sx, sy)
-  const r = (c: number, row: number, cw: number, rh: number, fill: string, extra = '') =>
-    `<rect x="${(ox + c * pw).toFixed(1)}" y="${(oy + row * ph).toFixed(1)}" width="${(cw * pw).toFixed(1)}" height="${(rh * ph).toFixed(1)}" fill="${fill}"${extra}/>`
-  const body = CLAWD_PIXELS.map(([c, row, cw, rh]) => r(c, row, cw, rh, CLAWD)).join('')
-  const shadeSide = r(13.6, 0, 1.4, 4, shade(CLAWD, -0.18))
-  const eyeH = (ph * (w.mood === 'stuck' ? 0.4 : 1)).toFixed(1)
-  const eyeY = oy + ph * (w.mood === 'stuck' ? 1.4 : w.mood === 'think' ? 0.75 : 1)
-  const blink = w.mood === 'stuck' ? '' : `<animate attributeName="height" values="${eyeH};${eyeH};0.5;${eyeH}" keyTimes="0;0.93;0.96;1" dur="4.2s" repeatCount="indefinite"/>`
-  const eyes = [5, 12].map(c => `<rect x="${(ox + c * pw).toFixed(1)}" y="${eyeY.toFixed(1)}" width="${pw.toFixed(1)}" height="${eyeH}" fill="${EYE}">${blink}</rect>`).join('')
-  const badge = w.isSub ? r(7.5, -0.7, 3, 0.7, w.color) : ''
-  const motion = w.mood === 'stuck'
-    ? `<animateTransform attributeName="transform" type="translate" values="-1 0;1 0;-1 0" dur="0.18s" repeatCount="indefinite"/>`
-    : w.mood === 'work' || w.mood === 'think'
-      ? `<animateTransform attributeName="transform" type="translate" values="0 0;0 -${w.mood === 'work' ? 2 : 1.2};0 0" dur="${w.mood === 'work' ? 0.45 : 1.4}s" repeatCount="indefinite"/>`
-      : ''
-  const walk = from && (Math.abs(from[0] - sx) > 0.5 || Math.abs(from[1] - sy) > 0.5)
-    ? `<animateTransform attributeName="transform" type="translate" from="${(from[0] - sx).toFixed(1)} ${(from[1] - sy).toFixed(1)}" to="0 0" dur="1.1s" fill="freeze"/>`
-    : ''
-  const shadow = `<ellipse cx="0" cy="0" rx="${(8 * pw).toFixed(1)}" ry="${(1.6 * ph * 0.6).toFixed(1)}" fill="#1d2033" opacity="0.16"/>`
-  return `<g transform="translate(${sx.toFixed(1)} ${sy.toFixed(1)})"><g>${walk}${shadow}<g>${motion}${body}${shadeSide}${eyes}${badge}</g></g></g>`
-}
+const f = (n: number) => n.toFixed(1)
+const FONT = 'Pretendard, Apple SD Gothic Neo, Malgun Gothic, Noto Sans KR, system-ui, sans-serif'
+const INK = '#1d2033'
+const SCALE = 0.62 // 스프라이트(2배로 구움)를 배경 위에 그리는 배율
+const textWidth = (s: string, px: number) => [...s].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2e80 ? px : px * 0.58), 0)
 
 type Rect = { x: number; y: number; w: number; h: number }
 
-/** 말풍선: 이미 놓인 풍선과 겹치면 위로 올림 */
-function bubble(w: Worker, sx: number, sy: number, placed: Rect[]): string {
-  const text = w.mood === 'think' ? '💭 고민 중…' : w.mood === 'stuck' ? '😣 ' + short(w.detail.replace(/^😣 막힘 · /, ''), 16) : short(w.detail, 18)
-  if (!text) return ''
-  const width = Math.min(150, 14 + [...text].length * 7.2)
-  let top = sy - (w.isSub ? 30 : 34)
-  for (let k = 0; k < 6; k++) {
-    const hit = placed.find(r => sx - width / 2 < r.x + r.w && sx + width / 2 > r.x && top - 17 < r.y + r.h && top > r.y)
-    if (!hit) break
-    top = hit.y - 3
+function sprite(w: Worker, sx: number, sy: number, from: [number, number] | undefined): string {
+  const k = SCALE * (w.isSub ? 0.85 : 1)
+  const [ax, ay] = SPRITE_ANCHOR
+  const use = (id: string, anim = '') => {
+    const open = `<use href="#clawd-${id}" transform="scale(${k}) translate(${-ax} ${-ay})"`
+    return anim ? `${open}>${anim}</use>` : `${open}/>`
   }
-  placed.push({ x: sx - width / 2, y: top - 17, w: width, h: 17 })
-  const border = w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? shade(PAL.purple, 0.35) : '#d6d9e4'
-  const color = w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? PAL.purple : '#1d2033'
-  return `<g><rect x="${(sx - width / 2).toFixed(1)}" y="${(top - 17).toFixed(1)}" width="${width.toFixed(1)}" height="17" rx="8.5" fill="#fff" stroke="${border}"/>` +
-    `<path d="M${(sx - 4).toFixed(1)} ${top.toFixed(1)} L${sx.toFixed(1)} ${(top + 5).toFixed(1)} L${(sx + 4).toFixed(1)} ${top.toFixed(1)}" fill="#fff" stroke="${border}"/>` +
-    `<rect x="${(sx - 5).toFixed(1)}" y="${(top - 1.5).toFixed(1)}" width="10" height="2" fill="#fff"/>` +
-    `<text x="${sx.toFixed(1)}" y="${(top - 5.2).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${color}">${esc(text)}</text></g>`
+  // 일하는 중: 두 포즈를 번갈아 (타자 치듯)
+  const flip = (values: string) => `<animate attributeName="opacity" values="${values}" calcMode="discrete" dur="0.5s" repeatCount="indefinite"/>`
+  const frames = w.mood === 'work'
+    ? use('idle', flip('1;0')) + use('type', flip('0;1'))
+    : use(w.mood === 'think' ? 'think' : w.mood === 'stuck' ? 'stuck' : 'idle')
+  const motion = w.mood === 'stuck'
+    ? '<animateTransform attributeName="transform" type="translate" values="-1.2 0;1.2 0;-1.2 0" dur="0.16s" repeatCount="indefinite"/>'
+    : w.mood === 'think'
+      ? '<animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0" dur="1.4s" repeatCount="indefinite"/>'
+      : w.mood === 'work'
+        ? '<animateTransform attributeName="transform" type="translate" values="0 0;0 -1.2;0 0" dur="0.5s" repeatCount="indefinite"/>'
+        : ''
+  const moved = from && Math.hypot(from[0] - sx, from[1] - sy) > 2
+  const walk = moved
+    ? `<animateTransform attributeName="transform" type="translate" from="${f(from[0] - sx)} ${f(from[1] - sy)}" to="0 0" dur="1.2s" fill="freeze"/>`
+    : ''
+  const hop = moved ? '<animateTransform attributeName="transform" type="translate" values="0 0;0 -3;0 0" dur="0.3s" repeatCount="4"/>' : ''
+  const top = -ay * k
+  const badge = w.isSub ? `<rect x="-7" y="${f(top - 3)}" width="14" height="4.5" rx="1.2" fill="${w.color}" stroke="#fff" stroke-width="0.8"/>` : ''
+  const shadow = `<ellipse cx="0" cy="1" rx="${f(SPRITE_W * k * 0.36)}" ry="${f(SPRITE_W * k * 0.11)}" fill="#14182c" opacity="0.18"/>`
+  return `<g transform="translate(${f(sx)} ${f(sy)})"><g>${walk}${shadow}<g>${hop}<g>${motion}${frames}${badge}</g></g></g></g>`
 }
 
 function nameTag(w: Worker, sx: number, sy: number): string {
-  const name = short(w.name, 16)
-  const width = 18 + [...name].length * 6.6
-  return `<g><rect x="${(sx - width / 2).toFixed(1)}" y="${(sy + 3).toFixed(1)}" width="${width.toFixed(1)}" height="13" rx="6.5" fill="#fff" stroke="#e3e5ee"/>` +
-    `<circle cx="${(sx - width / 2 + 7).toFixed(1)}" cy="${(sy + 9.5).toFixed(1)}" r="2.6" fill="${w.isSub ? w.color : PAL.blue}"/>` +
-    `<text x="${(sx - width / 2 + 12).toFixed(1)}" y="${(sy + 12.6).toFixed(1)}" font-size="8.5" font-weight="700" fill="#1d2033">${esc(name)}</text></g>`
+  const name = short(w.name, 18)
+  const width = textWidth(name, 10.5) + 24
+  const x = sx - width / 2, y = sy + 6
+  return `<g><rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="17" rx="8.5" fill="#fff" fill-opacity="0.96" stroke="#1e233c" stroke-opacity="0.12"/>` +
+    `<circle cx="${f(x + 9)}" cy="${f(y + 8.5)}" r="3.2" fill="${w.isSub ? w.color : PAL.blue}"/>` +
+    `<text x="${f(x + 15)}" y="${f(y + 12.3)}" font-size="10.5" font-weight="700" fill="${INK}">${esc(name)}</text></g>`
 }
 
-const FONT = 'Pretendard, Apple SD Gothic Neo, Malgun Gothic, Noto Sans KR, sans-serif'
+function bubble(w: Worker, sx: number, sy: number, placed: Rect[]): string {
+  const text = w.mood === 'think' ? '💭 고민 중…' : w.mood === 'stuck' ? '😣 막혔다… 다시 고민 중' : w.mood === 'rest' && w.room === 'lounge' ? '☕' : short(w.detail, 24)
+  const sub = w.mood === 'stuck' ? short(w.detail.replace(/^😣 막힘 · /, ''), 34) : ''
+  if (!text) return ''
+  const width = Math.max(textWidth(text, 11), sub ? textWidth(sub, 9.5) : 0) + 18
+  const h = sub ? 37 : 24
+  const headTop = sy - SPRITE_ANCHOR[1] * SCALE * (w.isSub ? 0.85 : 1)
+  let x = sx - width / 2, y = headTop - h - 9
+  for (let k = 0; k < 6; k++) {
+    const hit = placed.find(r => x < r.x + r.w && x + width > r.x && y < r.y + r.h && y + h > r.y)
+    if (!hit) break
+    y = hit.y - h - 4
+  }
+  placed.push({ x, y, w: width, h })
+  const border = w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? '#b48be0' : '#1e233c'
+  const bo = w.mood === 'stuck' || w.mood === 'think' ? '' : ' stroke-opacity="0.14"'
+  const color = w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? PAL.purple : INK
+  const tail = `<path d="M${f(sx - 5)} ${f(y + h - 0.5)} L${f(sx)} ${f(Math.min(y + h + 7, headTop - 1))} L${f(sx + 5)} ${f(y + h - 0.5)}" fill="#fff"/>`
+  return `<g filter="url(#lift)"><rect x="${f(x)}" y="${f(y)}" width="${f(width)}" height="${h}" rx="9" fill="#fff" stroke="${border}"${bo}/>${tail}` +
+    `<text x="${f(x + 9)}" y="${f(y + 16)}" font-size="11" font-weight="${w.mood === 'talk' ? 600 : 700}" fill="${color}">${esc(text)}</text>` +
+    (sub ? `<text x="${f(x + 9)}" y="${f(y + 30)}" font-size="9.5" font-weight="600" fill="#727795">${esc(sub)}</text>` : '') + '</g>'
+}
 
-/** 사무실 한 장. `prev`: 지난번에 그린 화면 위치, 다른 방으로 옮긴 사람은 거기서 걸어옴 */
+/** 사무실 한 장. `prev`: 지난번에 그린 위치, 다른 방으로 옮긴 사람은 거기서 걸어옴 */
 export function officeSvg(o: Office, prev: Map<string, [number, number]>): { svg: string; drawn: Map<string, [number, number]> } {
-  const GW = 30, GH = 22
-  const parts: string[] = []
-  // 바닥판과 뒷벽
-  parts.push(isoBox(-0.25, -0.25, GW + 0.5, GH + 0.5, 0.3, '#d3d6e1'))
-  parts.push(`<polygon points="${pts([iso(0, 0, 0.3), iso(GW, 0, 0.3), iso(GW, GH, 0.3), iso(0, GH, 0.3)])}" fill="#eceef3"/>`)
-  parts.push(`<polygon points="${pts([iso(0, 0, 0.3), iso(GW, 0, 0.3), iso(GW, 0, 3.2), iso(0, 0, 3.2)])}" fill="#f4f5f9" stroke="#d9dce6"/>`)
-  parts.push(`<polygon points="${pts([iso(0, 0, 0.3), iso(0, GH, 0.3), iso(0, GH, 3.2), iso(0, 0, 3.2)])}" fill="#e7e9f0" stroke="#d9dce6"/>`)
-  for (let i = 0; i < 6; i++) {
-    const x = 15 + i * 2.45
-    parts.push(`<polygon points="${pts([iso(x, 0, 1.0), iso(x + 2, 0, 1.0), iso(x + 2, 0, 2.6), iso(x, 0, 2.6)])}" fill="#cfe9fb" stroke="#aab4c8"/>`)
-  }
-  parts.push(`<polygon points="${pts([iso(0, 7.5, 0.3), iso(0, 9.5, 0.3), iso(0, 9.5, 2.5), iso(0, 7.5, 2.5)])}" fill="#9aa3b8" stroke="#7b8199"/>`)
-  for (const R of Object.values(ROOMS)) {
-    parts.push(`<polygon points="${pts([iso(R.x, R.y, 0.3), iso(R.x + R.w, R.y, 0.3), iso(R.x + R.w, R.y + R.d, 0.3), iso(R.x, R.y + R.d, 0.3)])}" fill="${R.floor}" stroke="${shade(R.color, 0.25)}" stroke-width="1.2"/>`)
-  }
-  // 가구 (앞에 있는 것일수록 나중에)
-  const things = furniture()
-  things.sort((a, b) => a.depth - b.depth)
-  parts.push(...things.map(t => t.svg))
-  // 방 이름 (방의 가장 안쪽 모서리, 직원보다 아래)
-  for (const R of Object.values(ROOMS)) {
-    const [lx, ly] = iso(R.x + 0.5, R.y + 0.5, 0.3)
-    const width = 12 + [...R.name].length * 8.4
-    parts.push(`<g opacity="0.92"><rect x="${(lx - width / 2).toFixed(1)}" y="${(ly - 2).toFixed(1)}" width="${width.toFixed(1)}" height="14" rx="7" fill="#ffffff" stroke="${shade(R.color, 0.4)}"/>` +
-      `<text x="${lx.toFixed(1)}" y="${(ly + 8.4).toFixed(1)}" text-anchor="middle" font-size="8.5" font-weight="800" fill="${shade(R.color, -0.3)}">${esc(R.name)}</text></g>`)
-  }
-  // 직원은 가구에 가리지 않게 맨 위에, 뒤에 있는 사람부터
+  const defs = '<defs>' +
+    '<clipPath id="frame"><rect width="' + BG_W + '" height="' + BG_H + '" rx="14"/></clipPath>' +
+    '<filter id="lift" x="-20%" y="-30%" width="140%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#141832" flood-opacity="0.14"/></filter>' +
+    Object.entries(SPRITES).map(([id, href]) => `<image id="clawd-${id}" href="${href}" width="${SPRITE_W}" height="${SPRITE_H}"/>`).join('') +
+    '</defs>'
   const pos = seats(o.workers)
   const drawn = new Map<string, [number, number]>()
   const people = o.workers.flatMap(w => {
     const p = pos.get(w.id)
-    return p ? [{ w, p, at: iso(p[0], p[1], 0.3) }] : []
-  }).sort((a, b) => a.p[0] + a.p[1] - (b.p[0] + b.p[1]))
-  for (const { w, at: [sx, sy] } of people) {
-    drawn.set(w.id, [sx, sy])
-    parts.push(clawd(w, sx, sy, prev.get(w.id)))
+    return p ? [{ w, p }] : []
+  }).sort((a, b) => a.p[1] - b.p[1])
+  const parts: string[] = [`<image href="${BG}" width="${BG_W}" height="${BG_H}"/>`]
+  for (const { w, p } of people) {
+    drawn.set(w.id, p)
+    parts.push(sprite(w, p[0], p[1], prev.get(w.id)))
   }
-  for (const { w, at: [sx, sy] } of people) parts.push(nameTag(w, sx, sy))
+  for (const { w, p } of people) parts.push(nameTag(w, p[0], p[1]))
   const placed: Rect[] = []
-  for (const { w, at: [sx, sy] } of [...people].reverse()) parts.push(bubble(w, sx, sy, placed))
-  const [x0] = iso(0, GH), [x1] = iso(GW, 0), [, y1] = iso(GW, GH)
-  const vb = `${(x0 - 16).toFixed(0)} ${(-3.2 * S * 0.82 - 40).toFixed(0)} ${(x1 - x0 + 32).toFixed(0)} ${(y1 + 3.2 * S * 0.82 + 52).toFixed(0)}`
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="680" font-family="${FONT}">${parts.join('')}</svg>`
+  for (const { w, p } of [...people].reverse()) parts.push(bubble(w, p[0], p[1], placed))
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BG_W} ${BG_H}" width="${BG_W}" height="${BG_H}" font-family="${FONT}">` +
+    `${defs}<g clip-path="url(#frame)"><rect width="${BG_W}" height="${BG_H}" fill="#eef0f6"/>${parts.join('')}</g></svg>`
   return { svg, drawn }
 }
