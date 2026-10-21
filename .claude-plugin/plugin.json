@@ -1,0 +1,7 @@
+{
+  "name": "agent-office",
+  "version": "0.2.0",
+  "description": "Claude Code 세션을 3D 사무실로 보여주는 대시보드를 자동으로 띄우고, 채팅 옆 패널에 지금 누가 어디서 뭘 하는지 보여줍니다",
+  "author": { "name": "VSM" },
+  "types": "./types/index.d.ts"
+}

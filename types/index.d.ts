@@ -26,8 +26,16 @@ export type PendingTask = { prompt: string; description: string; type: string }
 
 export type Office = { workers: Worker[]; log: LogLine[]; pending: PendingTask[] }
 
+/** 3D 사무실(office.py) 서버: 이 세션이 띄웠거나, 다른 세션이 이미 띄운 것을 같이 씀 */
+export type Server = {
+  state: 'starting' | 'running' | 'stopped' | 'failed'
+  url: string
+  /** 실패 이유나 '다른 세션의 서버' 같은 한 줄 */
+  note: string
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'agent-office': { office: Office }
+    'agent-office': { office: Office; server: Server }
   }
 }

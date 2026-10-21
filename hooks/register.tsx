@@ -1,12 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { LogLine, Mood, Office, Room, Worker } from '../types'
-import { CLAWD, PAL, ROOMS, ROOM_ORDER, SUB_COLORS, officeSvg, short, toolDetail, toolRoom } from './office'
+import type { LogLine, Mood, Office, Room, Server, Worker } from '../types'
+import { PAL, ROOMS, SUB_COLORS, short, toolDetail, toolRoom } from './office'
 
 const PANE = 'agent-office'
 const TITLE = 'Claude Office'
 const MAIN = 'main'
+const PORT = '8765' // office.py 의 기본 포트
+const URL = `http://127.0.0.1:${PORT}`
+const CHECK_EVERY = 30_000 // 서버가 살아 있는지 (다른 세션이 띄운 서버가 꺼지면 이어받음)
 const DONE_TO_LOUNGE = 20_000 // 응답이 끝나고 라운지로 가기까지
 const SUB_LEAVE = 4_000 // 서브에이전트가 일을 마치고 퇴근하기까지
 const LOG_KEEP = 40
@@ -17,9 +20,11 @@ const AGENT_TYPE_KO: Record<string, string> = {
 
 const empty = (): Office => ({ workers: [], log: [], pending: [] })
 const office = atom({ plugin: 'agent-office', key: 'office' } as const, empty())
+const server = atom({ plugin: 'agent-office', key: 'server' } as const, { state: 'stopped', url: URL, note: '' } as Server)
 
-// 지난번 그림에서의 위치: 방을 옮긴 Clawd 가 걸어오게
-let prevSvg = new Map<string, [number, number]>()
+// 이 세션이 띄운 office.py 와 그것을 띄운 파이썬 (모듈이 다시 읽히면 처음부터)
+let child: AsyncGenerator<unknown, unknown> | null = null
+let python = ''
 
 /** 사무실 상태를 한 번에 고침 (복사본에 fn 적용) */
 async function edit($: EngineInterface, fn: (o: Office, now: number) => void) {
@@ -56,18 +61,88 @@ function log(o: Office, now: number, w: Worker, text: string, kind: LogLine['kin
   o.log.push({ at: now, who: w.name, text, kind })
 }
 
-export const register: Register = on => {
+async function setServer($: EngineInterface, state: Server['state'], note = '') {
+  await update($, server, () => ({ state, url: URL, note }))
+}
 
+async function isUp($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.http.fetch(`${URL}/state`)).ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 3D 사무실이 떠 있지 않으면 mod 폴더의 office.py 를 띄운다 (세션이 살아 있는 동안).
+ * 다른 세션이 이미 띄웠으면 그것을 같이 쓴다. `open` 이면 띄우면서 브라우저도 연다.
+ */
+async function ensureServer($: EngineInterface, open: boolean) {
+  if (await isUp($)) {
+    if (!child) await setServer($, 'running', '다른 세션이 띄운 사무실을 같이 보는 중')
+    return
+  }
+  if (child) return
+  await setServer($, 'starting')
+  const script = `${$.plugin.root}/office.py`
+  // Windows 콘솔 인코딩에서 이모지 출력이 죽지 않게 UTF-8 로
+  const env = { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+  for (const py of python ? [python] : ['python3', 'python', 'py']) {
+    const argv = [py, script, '--port', PORT, ...(open ? [] : ['--no-browser'])]
+    const stream = $.process.spawn({ argv, cwd: $.plugin.root, env })
+    let first: IteratorResult<unknown, unknown>
+    try {
+      first = await stream.next() // 실행할 수 없으면 여기서 실패
+    } catch {
+      continue
+    }
+    if (first.done) continue // 바로 끝남 (포트를 다른 프로그램이 쓰는 중 등)
+    python = py
+    child = stream
+    await setServer($, 'running')
+    void (async () => {
+      try {
+        for await (const piece of stream) void piece
+      } catch {
+        // 모듈이 다시 읽히거나 세션이 끝나면 여기로
+      }
+      if (child === stream) child = null
+      await setServer($, (await isUp($)) ? 'running' : 'stopped', (await isUp($)) ? '다른 세션이 띄운 사무실을 같이 보는 중' : '')
+    })()
+    return
+  }
+  await setServer($, 'failed', '파이썬(python3 · python · py)을 찾지 못했어요')
+}
+
+async function openBrowser($: EngineInterface) {
+  for (const py of python ? [python] : ['python3', 'python', 'py']) {
+    try {
+      const r = await $.process.run([py, '-m', 'webbrowser', '-t', URL])
+      if (r.exitCode === 0) return true
+    } catch {
+      // 다음 파이썬으로
+    }
+  }
+  return false
+}
+
+export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'office', description: 'Claude Office 사무실 패널 열기' })
+    await $.command.register({ name: 'office', description: '3D 사무실을 브라우저에 열고 Claude Office 패널 보기' })
     await edit($, (o, now) => void mainOf(o, now))
     void $.ui.open({ id: PANE, title: TITLE })
+    if (e.isInteractive) {
+      void ensureServer($, true)
+      $.clock.every(CHECK_EVERY, () => ensureServer($, false))
+    }
     return next(e)
   })
 
   on('command.run', { command: 'office' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'Claude Office 패널을 열었어요.' }
+    await ensureServer($, false)
+    const opened = await openBrowser($)
+    return { text: opened ? `3D 사무실을 열었어요: ${URL}` : `브라우저를 열지 못했어요. 주소창에 ${URL} 를 넣어 주세요.` }
   })
 
   // 턴 시작: 메인은 지시를 듣고, 서브에이전트는 엘리베이터에서 출근
@@ -177,73 +252,45 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // 패널: 3D 사무실 주소와 상태, 지금 일하는 사람들, 최근 활동 (글자만)
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const o = await read($, office)
-    const { Box, Text } = els
-    const cols = e.props.bodyColumns
-    const logs = o.log.slice(-6).reverse()
-    const logList = (
-      <Box flexDirection="column">
-        {logs.map(l => (
-          <Text wrap="truncate" color={l.kind === 'error' ? PAL.red : undefined} dimColor={l.kind === 'tool'}>
-            {l.who} · {l.text}
-          </Text>
-        ))}
-      </Box>
-    )
-
-    if (e.surface !== 'terminal') {
-      const { Svg } = $.ui.resolve({ ...e, surface: e.surface })
-      const { svg, drawn } = officeSvg(o, prevSvg)
-      prevSvg = drawn
-      const alt = o.workers.map(w => `${w.name}: ${ROOMS[w.room].name} · ${w.detail}`).join(', ') || '사무실이 비어 있어요'
-      return (
-        <Box flexDirection="column" gap="sm">
-          <Svg source={svg} alt={alt} isInteractive />
-          {logList}
-        </Box>
-      )
-    }
-
-    // 터미널: 방마다 테두리 상자, 그 안에 Clawd 픽셀 그림
-    const perRow = cols >= 96 ? 4 : cols >= 48 ? 2 : 1
-    const width = Math.max(14, Math.floor(cols / perRow))
-    const rows: Room[][] = []
-    for (let i = 0; i < ROOM_ORDER.length; i += perRow) rows.push(ROOM_ORDER.slice(i, i + perRow))
-    const moodText = (w: Worker) =>
-      w.mood === 'think' ? '💭 고민 중' : w.mood === 'stuck' ? '😣 ' + w.detail.replace(/^😣 막힘 · /, '') : w.detail
+    const srv = await read($, server)
+    const mood = (w: Worker) =>
+      w.mood === 'think' ? '💭 고민 중' : w.mood === 'stuck' ? w.detail : w.detail
+    const stateText = { starting: '여는 중…', running: '열려 있음', stopped: '꺼짐', failed: '열지 못함' }[srv.state]
+    const stateColor = { starting: PAL.orange, running: PAL.green, stopped: undefined, failed: PAL.red }[srv.state]
     return (
-      <Box flexDirection="column">
-        {rows.map(row => (
-          <Box flexDirection="row">
-            {row.map(room => {
-              const R = ROOMS[room]
-              const here = o.workers.filter(w => w.room === room)
-              return (
-                <Box flexDirection="column" borderStyle="round" borderColor={R.color} width={width} paddingX={1}>
-                  <Text color={R.color} bold wrap="truncate">{R.name}</Text>
-                  {here.length === 0 && <Text dimColor wrap="truncate">{R.what}</Text>}
-                  {here.map(w => (
-                    <Box flexDirection="column">
-                      <Text color={CLAWD}>{w.isSub ? ' ▐▛█▜▌' : ' ▐▛███▜▌'}</Text>
-                      <Text color={CLAWD}>{w.isSub ? '▝▜███▛▘' : '▝▜█████▛▘'}</Text>
-                      <Text color={CLAWD}>{w.isSub ? '  ▘ ▝' : '  ▘▘ ▝▝'}</Text>
-                      <Text wrap="truncate">
-                        <Text color={w.isSub ? w.color : PAL.blue}>● </Text>
-                        <Text bold>{w.name}</Text>
-                      </Text>
-                      <Text wrap="truncate" color={w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? PAL.purple : undefined} dimColor={w.mood === 'rest'}>
-                        {moodText(w)}
-                      </Text>
-                    </Box>
-                  ))}
-                </Box>
-              )
-            })}
-          </Box>
-        ))}
-        {logList}
+      <Box flexDirection="column" gap="sm">
+        <Box flexDirection="row" gap="sm" alignItems="center">
+          <Text color={stateColor} bold>● 3D 사무실 {stateText}</Text>
+          <Text dimColor wrap="truncate">{srv.url}</Text>
+          <Button key="open" label="브라우저에서 열기" onPress={async () => { await ensureServer($, false); await openBrowser($) }} />
+        </Box>
+        {srv.note ? <Text dimColor wrap="truncate">{srv.note}</Text> : null}
+        <Box flexDirection="column">
+          {o.workers.map(w => {
+            const R = ROOMS[w.room]
+            return (
+              <Text wrap="truncate">
+                <Text color={w.isSub ? w.color : PAL.blue}>● </Text>
+                <Text bold>{w.name}</Text>
+                <Text> · </Text>
+                <Text color={R.color}>{R.name}</Text>
+                <Text> · </Text>
+                <Text color={w.mood === 'stuck' ? PAL.red : w.mood === 'think' ? PAL.purple : undefined} dimColor={w.mood === 'rest'}>{mood(w)}</Text>
+              </Text>
+            )
+          })}
+        </Box>
+        <Box flexDirection="column">
+          {o.log.slice(-4).reverse().map(l => (
+            <Text wrap="truncate" dimColor={l.kind !== 'error'} color={l.kind === 'error' ? PAL.red : undefined}>
+              {l.who} · {l.text}
+            </Text>
+          ))}
+        </Box>
       </Box>
     )
   })

@@ -1,9 +1,0 @@
-{
-  "name": "agent-office",
-  "version": "0.1.0",
-  "description": "Claude가 지금 하는 일을 Clawd가 일하는 사무실로 채팅 옆 패널에 보여줍니다",
-  "author": {
-    "name": "VSM"
-  },
-  "types": "./types/index.d.ts"
-}
