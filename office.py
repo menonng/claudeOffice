@@ -262,9 +262,11 @@ class Watcher:
     def _agent_for(self, path, obj):
         session = obj.get("sessionId") or path.stem
         if "subagents" in path.parts:
+            # <프로젝트>/<세션>/subagents/[하위 폴더/…]agent-<id>.jsonl — 하위 폴더가 있을 수 있음
             key, is_sub = str(path), True
-            parent = path.parent.parent.name
-            proj_dir = path.parent.parent.parent.name
+            i = len(path.parts) - 1 - path.parts[::-1].index("subagents")
+            parent = path.parts[i - 1]
+            proj_dir = path.parts[i - 2]
         elif obj.get("isSidechain"):
             key, is_sub = f"{path}#{obj.get('agentId', 'side')}", True
             parent, proj_dir = session, path.parent.name
