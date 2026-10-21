@@ -1,0 +1,14 @@
+{
+  "name": "office-mods",
+  "description": "Claude Office: Claude Code 세션을 사무실로 보여주는 mod",
+  "owner": {
+    "name": "VSM"
+  },
+  "plugins": [
+    {
+      "name": "agent-office",
+      "source": "./",
+      "description": "Claude Code 세션을 3D 사무실로 보여주는 대시보드를 자동으로 띄우고, 채팅 옆 패널에 상태를 보여줍니다"
+    }
+  ]
+}

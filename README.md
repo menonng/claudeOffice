@@ -34,11 +34,28 @@ python office.py --root D:/somewhere/.claude/projects --user VSM
 - 서브에이전트는 Task를 맡길 때 쓴 타입·설명으로 이름이 붙습니다 (예: `범용 · T-013 부속 작업`, `탐색 · API 호출부 탐색`)
 - 왼쪽 **층별 안내**: 프로젝트마다 한 층, 층 안에 최근 3일 세션 목록
 - 오른쪽 **사무실 사람들**에서 직원을 누르면 카메라가 따라갑니다
-- 오른쪽 아래 버튼으로 **사람 / 마스코트(오리지널 캐릭터)** 모드 전환
+- 오른쪽 아래 버튼으로 **사람 / 마스코트(Clawd)** 모드 전환 — 마스코트 모드에서 Claude와 서브에이전트는 Claude Code 마스코트 Clawd로 바뀌고(서브에이전트는 조금 작고 머리에 색 명찰), '나'는 사람 그대로
+  - Clawd는 몸이 커서 의자에 앉지 않고, 가구·벽과 겹치지 않는 자리에 서서 일합니다(그 자리 의자는 치움)
+  - 일할 땐 가구 쪽을, 고민할 땐 두리번, 막히면 이쪽을, 보고할 땐 나를, 라운지에선 서로를 봅니다
+- 햇빛은 개발실 창문으로 들어와 그림자가 창문 반대쪽으로 집니다. 라운지·탕비실은 벽 없이 트여 있습니다
+- 개발실은 넓은 책상 8개에 자리마다 다른 듀얼·트리플 모니터 구성(세로 모니터, 위아래 쌓기, 감싸는 배치, 백라이트)과 소품
 
 ## 조작
 
 드래그로 이동, 휠·핀치로 확대/축소, ⌂ 버튼으로 처음 시점.
+
+## Claude Code mod 로 자동 실행
+
+이 저장소는 그대로 Claude Code mod `agent-office`이기도 합니다. 설치하면 Claude Code 세션을 시작할 때 이 3D 사무실(`office.py`)을 백그라운드로 띄우고 브라우저에 엽니다. 다른 세션이 이미 띄웠으면 그것을 같이 쓰고, 그 세션이 끝나 꺼지면 30초 안에 이어서 띄웁니다.
+
+```
+/plugin install agent-office --marketplace menonng/claudeoffice
+```
+
+- 채팅 옆 **Claude Office** 패널: 3D 사무실 주소와 상태, 지금 일하는 사람(방 · 하는 일), 최근 활동 4줄 (글자만)
+- `/office`: 패널을 열고 3D 사무실을 브라우저에 다시 엶 (데스크톱 앱에서는 앱의 브라우저 창에 주소를 넣어 채팅 옆에 둘 수 있음)
+- 파이썬(`python3` · `python` · `py` 중 있는 것)이 필요합니다. 내 컴퓨터에서 도는 세션(CLI · 데스크톱)에서만 볼 수 있고, 클라우드 세션은 서버가 클라우드에 떠서 보이지 않습니다
+- 패널 안에 3D 를 그대로 넣지 않는 이유: mod 패널은 스크립트를 실행하지 않아 WebGL 을 그릴 수 없습니다
 
 ## 파일
 
@@ -46,4 +63,9 @@ python office.py --root D:/somewhere/.claude/projects --user VSM
 office.py              서버 (tail + SSE)
 office.html            3D 화면
 vendor/three.*.js      three.js r186 (MIT, vendor/three-LICENSE.txt)
+.claude-plugin/        mod 매니페스트(plugin.json)와 마켓플레이스(marketplace.json)
+hooks/register.tsx     mod: 3D 사무실 자동 실행, 세션 이벤트로 상태 패널
+hooks/office.ts        mod: 도구 → 구역 매핑 (office.py 와 같은 규칙)
+hooks/office.test.tsx  mod 테스트 (claude plugin test .)
+types/index.d.ts       mod 의 $.state 계약
 ```

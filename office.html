@@ -113,7 +113,7 @@ aside{background:var(--card);border:1px solid var(--line);border-radius:14px;ove
     <div class="top"><span class="fl" id="flNo">–</span><div><b id="flName">Claude Office</b><span id="flTitle">연결 중…</span></div></div>
     <div class="live" id="live"><i></i>LIVE</div>
     <div class="ctrl"><button id="zin" title="확대">＋</button><button id="zout" title="축소">－</button><button id="zfit" title="처음 시점">⌂</button></div>
-    <div class="mode"><button data-m="human">🧑 사람</button><button data-m="mascot">🫧 마스코트</button></div>
+    <div class="mode"><button data-m="human">🧑 사람</button><button data-m="mascot">👾 Clawd</button></div>
     <div class="empty" id="empty"><div id="emptyMsg"></div></div>
   </div>
 
@@ -156,9 +156,6 @@ const WALLS=[
   {x0:7,y0:7,x1:14,y1:7,k:'solid',g:[[9.8,11.2]]},
   {x0:14,y0:0,x1:14,y1:10,k:'solid'},
   {x0:14,y0:10,x1:30,y1:10,k:'glass',g:[[17.6,19.2],[25.4,27]]},
-  {x0:3,y0:10,x1:7,y1:10,k:'solid'},
-  {x0:7,y0:10,x1:7,y1:17,k:'solid',g:[[12.3,13.7]]},
-  {x0:0,y0:17,x1:7,y1:17,k:'solid',g:[[3,4.3]]},
   {x0:7,y0:17,x1:7,y1:22,k:'solid',g:[[19,20.3]]},
   {x0:22,y0:12,x1:30,y1:12,k:'solid'},
   {x0:22,y0:12,x1:22,y1:18,k:'solid',g:[[14.5,15.8]]},
@@ -169,8 +166,9 @@ const WALLS=[
 ];
 // 자리: [x, y, 바라보는 방향(rad, 0=+y쪽), 앉기]
 const PI=Math.PI, N=PI, S=0, E=PI/2, W=-PI/2;
-const DEV_ROWS=[2.0,5.6], devSeats=[];
-for(const row of DEV_ROWS)for(let k=0;k<9;k++)devSeats.push([15.825+k*1.65,row+1.6,N,1]);
+// 개발실: 넓은 책상(3.3m) 한 줄에 넷, 두 줄
+const DEV_ROWS=[2.0,5.6], DEV_PITCH=3.65, DEV_W=3.3, devSeats=[];
+for(const row of DEV_ROWS)for(let k=0;k<4;k++)devSeats.push([15+k*DEV_PITCH+DEV_PITCH/2,row+1.6,N,1]);
 const SLOTS={
   meeting:[[2.3,2.05,S,1],[3.6,2.05,S,1],[4.9,2.05,S,1],[2.3,4.75,N,1],[3.6,4.75,N,1],[4.9,4.75,N,1],[1.05,3.4,E,1],[6.15,3.4,W,1]],
   library:[[8.3,1.5,N],[10.5,1.5,N],[12.7,1.5,N],[8.9,5.05,N,1],[10.3,5.05,N,1],[11.7,5.05,N,1],[13.5,4.6,S]],
@@ -195,7 +193,8 @@ const scene=new THREE.Scene();
 const camera=new THREE.OrthographicCamera(-1,1,1,-1,-200,400);
 scene.add(new THREE.HemisphereLight('#ffffff','#b9bdd0',1.55));
 const sun=new THREE.DirectionalLight('#fff6e8',2.1);
-sun.position.set(GW*0.5-9,26,GH*0.5+14);sun.target.position.set(GW/2,0,GH/2);
+// 햇빛은 개발실 창문(뒷벽, 북쪽)으로 들어옴 → 그림자는 창문 반대쪽(앞)으로 짐
+sun.position.set(GW*0.5+5,22,-17);sun.target.position.set(GW/2,0,GH/2);
 sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);
 Object.assign(sun.shadow.camera,{left:-24,right:24,top:24,bottom:-24,near:1,far:80});
 sun.shadow.bias=-0.0004;sun.shadow.normalBias=0.03;
@@ -257,6 +256,12 @@ function buildWalls(){
   for(let i=0;i<6;i++){const x=15+i*2.45;box(x-0.05,0,2.1,0.05,1.75,'#aab4c8',0.9,{},wz0);
     box(x,0.01,2,0.05,1.65,'#cfe9fb',0.95,{emissive:'#cfe9fb',ei:0.35},wz0);box(x+0.98,0.02,0.04,0.05,1.65,'#aab4c8',0.95,{},wz0);
     for(let k=0;k<5;k++)box(x,0.04,2,0.03,0.05,'#ffffff',2.35+k*0.06,{shadow:false},wz0);}
+  // 뒷벽은 그림자를 직접 드리우지 않고, 창문을 뺀 부분만 보이지 않는 상자로 그림자를 만듦 → 햇빛이 창문 모양으로 들어옴
+  wz0.traverse(o=>{o.castShadow=false;});
+  const SHADOW_ONLY=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:false});
+  const caster=(x,w,z,h)=>{const m=new THREE.Mesh(BOX,SHADOW_ONLY);m.castShadow=true;m.scale.set(w,h,0.2);m.position.set(x+w/2,z+h/2,-0.1);world.add(m);};
+  caster(-0.2,15.15,0,EXT_H);caster(14.95,15.25,0,0.95);caster(14.95,15.25,2.6,EXT_H-2.6);
+  for(let i=0;i<6;i++){const x0=15+i*2.45+2.05,x1=i<5?15+(i+1)*2.45-0.05:30.2;caster(x0,x1-x0,0,EXT_H);}
   // 회의실 화이트보드 + TV
   box(1.2,0,4.6,0.05,1.25,'#ffffff',1.0,{},wz0);
   [[1.6,1.95,2,PAL.blue],[1.6,1.75,3,PAL.green],[1.6,1.55,1.4,PAL.red]].forEach(([x,z,w,c])=>box(x,0.05,w,0.02,0.07,c,z,{shadow:false},wz0));
@@ -300,7 +305,8 @@ const MONITORS=[]; // {x,y, mat}
 function group(x,y,a=0,z=0){const g=new THREE.Group();g.position.set(x,z,y);g.rotation.y=a;world.add(g);return g;}
 function lbox(g,x,y,z,w,h,d,color,o={}){const m=mesh(BOX,o.material||mat(color,o),g,o.shadow??true);m.scale.set(w,h,d);m.position.set(x,y+h/2,z);return m;}
 function lcyl(g,x,y,z,r,h,color,o={}){const m=mesh(geo('c'+(o.seg||20),()=>new THREE.CylinderGeometry(1,1,1,o.seg||20)),o.material||mat(color,o),g,o.shadow??true);m.scale.set(r,h,r);m.position.set(x,y+h/2,z);return m;}
-function chair(x,y,a,col=PAL.blue){const g=group(x,y,a);
+const CHAIRS=[]; // Clawd 가 그 자리에서 일하면 의자를 치움 (몸이 의자보다 커서 앉지 않고 섬)
+function chair(x,y,a,col=PAL.blue){const g=group(x,y,a);CHAIRS.push({x,y,g});
   lcyl(g,0,0,0,0.22,0.03,'#5a5f78');lcyl(g,0,0.03,0,0.035,0.38,'#5a5f78');
   lbox(g,0,0.41,0,0.5,0.08,0.48,col);lbox(g,0,0.49,-0.24,0.48,0.5,0.07,shade(col,-0.12));return g;}
 function stool(x,y,col=PAL.orange){const g=group(x,y);lcyl(g,0,0,0,0.04,0.42,'#8a92a8');lcyl(g,0,0.42,0,0.2,0.06,col);}
@@ -333,6 +339,47 @@ function sofa(x,y,w,d,back,col='#8a5a3c'){block(x,y,w,d);const dark=shade(col,-0
 function bookshelf(x,y,w=2,d=0.6,h=2.2){block(x,y,w,d);box(x,y,w,0.06,h,'#6e4326');box(x,y,0.06,d,h,'#6e4326');box(x+w-0.06,y,0.06,d,h,'#6e4326');box(x,y,w,d,0.06,'#6e4326',h-0.06);
   for(let r=0;r<5;r++)box(x,y,w,d,0.05,'#7f5232',r*h/5);
   return [x,y,w,d,h];}
+// 모니터 하나: 가운데 아래(cx, cy)에서 화면이 앞(자리 쪽, +y)을 봄. rot 으로 안쪽으로 꺾음
+const MON={h27:[0.6,0.34],h24:[0.53,0.3],v24:[0.3,0.53],uw:[0.84,0.35],big:[0.74,0.42]};
+function monitor(kind,cx,cy,bottom,rot,sm,stand=true){const [w,h]=MON[kind],g=group(cx,cy,rot);
+  lbox(g,-(w+0.03)/2,bottom-0.015,-0.03,w+0.03,h+0.03,0.04,'#1d2030');
+  lbox(g,-w/2,bottom,0.01,w,h,0.006,'',{material:sm,shadow:false});
+  if(stand){lbox(g,-0.02,0.77,-0.07,0.04,bottom-0.77,0.035,'#2a2d3d');lbox(g,-0.11,0.77,-0.13,0.22,0.015,0.15,'#2a2d3d');}
+  return g;}
+function monitorSetup(kind,sx,row,sm){const y=row+0.34,B=0.95;
+  if(kind==='dual'){monitor('h27',sx-0.31,y,B,0.1,sm);monitor('h27',sx+0.31,y,B,-0.1,sm);}
+  else if(kind==='dualV'){monitor('h27',sx-0.18,y,B,0.06,sm);monitor('v24',sx+0.36,y+0.04,0.9,-0.3,sm);}
+  else if(kind==='tripleCurve'){monitor('h27',sx,y,B,0,sm);monitor('h27',sx-0.6,y+0.13,B,0.42,sm);monitor('h27',sx+0.6,y+0.13,B,-0.42,sm);}
+  else if(kind==='tripleSides'){monitor('h27',sx,y,B,0,sm);monitor('v24',sx-0.48,y+0.06,0.88,0.28,sm);monitor('v24',sx+0.48,y+0.06,0.88,-0.28,sm);
+    lbox(group(sx,y-0.02),-0.025,0.77,0,0.05,0.24,0.05,'#e8e9ef');}
+  else if(kind==='tripleStack'){monitor('v24',sx-0.42,y+0.05,0.88,0.22,sm);monitor('h24',sx+0.14,y,0.88,-0.05,sm);monitor('h24',sx+0.14,y,0.88+0.33,-0.05,sm,false);}
+  else if(kind==='tripleTop'){monitor('uw',sx,y,0.9,0,sm);monitor('big',sx,y-0.04,0.9+0.38,0,sm,false);
+    // 모니터 뒤 벽면 조명
+    const glow=mesh(BOX,new THREE.MeshBasicMaterial({color:PAL.sky,transparent:true,opacity:0.35,depthWrite:false}),world,false);
+    glow.scale.set(1.25,0.95,0.01);glow.position.set(sx,1.3,row+0.08);
+    const pl=new THREE.PointLight(PAL.sky,0.8,2.2);pl.position.set(sx,1.3,row+0.25);world.add(pl);}
+}
+// 책상 위 소품: 키보드·마우스는 늘, 나머지는 자리마다 다르게
+function deskProps(n,sx,row,dx){const T=0.77,f=row+0.6;
+  box(sx-0.24,f,0.48,0.16,0.025,n%3===1?'#2a2d3d':'#d5d8e2',T);box(sx+0.33,f+0.03,0.06,0.1,0.025,n%2?'#2a2d3d':'#ffffff',T);
+  const L=dx+0.25,R=dx+DEV_W-0.45;
+  const items=[
+    ()=>{cyl(R+0.1,row+0.75,0.045,0.1,PAL.pink,T);cyl(L+0.1,row+0.45,0.12,0.12,'#d8d2c6',T);sph(L+0.1,row+0.45,T+0.22,0.13,'#55BB44',{sy:1.2});},
+    ()=>{box(R-0.05,row+0.2,0.24,0.46,0.46,'#f1f2f6',T);box(R-0.06,row+0.21,0.01,0.42,0.4,'#bfe9ff',T+0.03,{opacity:0.6,emissive:PAL.sky,ei:0.5});
+      box(L,row+0.3,0.12,0.12,0.2,'#e8e9ef',T);box(L+0.35,row+0.3,0.12,0.12,0.2,'#e8e9ef',T);},
+    ()=>{cyl(R+0.05,row+0.35,0.07,0.01,'#2a2d3d',T);box(R+0.03,row+0.33,0.04,0.04,0.32,'#2a2d3d',T);box(R-0.05,row+0.31,0.2,0.08,0.06,'#20232f',T+0.3);
+      box(L,row+0.55,0.3,0.22,0.06,'#c9a06c',T);box(L+0.02,row+0.56,0.26,0.2,0.05,'#ffffff',T+0.06);},
+    ()=>{box(L,row+0.25,0.2,0.28,0.05,PAL.blue,T);box(L,row+0.25,0.2,0.28,0.05,PAL.orange,T+0.05);box(L+0.02,row+0.26,0.17,0.26,0.04,PAL.green,T+0.1);
+      cyl(R+0.12,row+0.4,0.08,0.01,'#2a2d3d',T);box(R+0.1,row+0.38,0.03,0.03,0.4,'#2a2d3d',T);
+      const lamp=mesh(geo('cone',()=>new THREE.ConeGeometry(0.14,0.14,16,1,true)),mat(PAL.yellow,{emissive:PAL.yellow,ei:0.8}));lamp.position.set(R+0.11,T+0.42,row+0.48);},
+    ()=>{box(R,row+0.65,0.16,0.1,0.04,'#f4f4f6',T);box(L,row+0.3,0.1,0.1,0.18,PAL.red,T);sph(L+0.05,row+0.35,T+0.24,0.06,'#f6d2b0');cyl(R+0.2,row+0.35,0.045,0.1,'#ffffff',T);},
+    ()=>{box(L,row+0.55,0.25,0.3,0.015,'#fff7c2',T);box(L+0.05,row+0.6,0.25,0.3,0.015,'#ffd6e2',T+0.015);cyl(R+0.1,row+0.5,0.045,0.1,PAL.sky,T);
+      cyl(R,row+0.22,0.1,0.1,'#d8d2c6',T);sph(R,row+0.22,T+0.17,0.1,'#3f9a33',{sy:1.4});},
+    ()=>{box(R-0.05,row+0.2,0.24,0.46,0.46,'#20232f',T);box(R-0.06,row+0.21,0.01,0.42,0.4,'#ff6a9a',T+0.03,{opacity:0.6,emissive:PAL.pink,ei:0.6});
+      box(L,row+0.62,0.16,0.1,0.04,'#20232f',T);},
+    ()=>{cyl(L+0.1,row+0.3,0.12,0.12,'#d8d2c6',T);sph(L+0.1,row+0.3,T+0.24,0.14,'#55BB44',{sy:1.3});box(R,row+0.35,0.12,0.12,0.2,'#e8e9ef',T);cyl(R+0.2,row+0.7,0.045,0.1,PAL.yellow,T);},
+  ];
+  items[n%items.length]();}
 function buildFurniture(){
   // 회의실
   box(1.3,2.0,5.3,3.0,0.008,'#55BB44',0.004,{opacity:0.28,shadow:false});
@@ -356,21 +403,20 @@ function buildFurniture(){
   box(10.4,3.9,0.6,0.42,0.02,'#ffffff',0.78);box(11.2,3.95,0.4,0.3,0.12,PAL.blue,0.78);box(11.25,3.97,0.3,0.26,0.1,PAL.red,0.9);
   for(const x of [8.9,10.3,11.7])chair(x,5.05,N,'#8a5a34');
   cabinet(13.15,5.4,0.75,0.6,1.1,'#b9bfcc','x');plant(7.6,6.4);
-  // 개발실 — 칸막이 책상
-  for(const row of DEV_ROWS){
-    block(15,row,14.6,1);box(15,row,14.6,1,0.05,'#f4f5f9',0.72);
-    for(let k=0;k<=9;k++){const dx=Math.min(29.54,15+k*1.65);box(dx,row,0.06,1,0.72,'#c9cdd8');box(dx,row,0.06,1,0.42,'#6f8fe0',0.77);}
-    box(15,row,14.6,0.06,0.48,'#6f8fe0',0.77);
-    for(let k=0;k<9;k++){const sx=15.825+k*1.65;
-      box(sx-0.06,row+0.18,0.12,0.12,0.08,'#2a2d3d',0.77);box(sx-0.02,row+0.22,0.04,0.04,0.2,'#2a2d3d',0.85);
-      box(sx-0.38,row+0.24,0.76,0.05,0.42,'#20232f',0.95);
-      const sm=new THREE.MeshStandardMaterial({color:'#46506e',emissive:'#000000',roughness:0.4});
-      const sc=box(sx-0.34,row+0.29,0.68,0.01,0.36,'',0.98,{material:sm,shadow:false});MONITORS.push({x:sx,y:row+1.6,mat:sm,k});
-      box(sx-0.28,row+0.5,0.56,0.18,0.025,'#d5d8e2',0.77);box(sx+0.33,row+0.55,0.07,0.1,0.02,'#ffffff',0.77);
-      if(k%3===1)cyl(sx+0.5,row+0.6,0.05,0.1,k%2?PAL.pink:'#ffffff',0.77);
-      if(k%4===2)box(sx-0.65,row+0.35,0.25,0.32,0.06,'#fff7c2',0.77);
+  // 개발실 — 넓은 책상, 자리마다 다른 모니터 구성과 소품
+  const DEV_SETUPS=['dual','tripleCurve','dualV','tripleSides','tripleStack','dual','tripleTop','tripleCurve'];
+  DEV_ROWS.forEach((row,ri)=>{
+    for(let k=0;k<4;k++){const dx=15+k*DEV_PITCH+(DEV_PITCH-DEV_W)/2,sx=15+k*DEV_PITCH+DEV_PITCH/2,n=ri*4+k;
+      block(dx,row,DEV_W,1.05);
+      box(dx,row,DEV_W,1.05,0.05,'#f4f5f9',0.72);
+      for(const lx of [dx+0.05,dx+DEV_W-0.11])box(lx,row+0.08,0.06,0.9,0.72,'#c9cdd8');
+      box(dx,row,DEV_W,0.06,0.45,'#6f8fe0',0.77);box(dx-0.02,row,0.06,1.05,0.4,'#6f8fe0',0.77);box(dx+DEV_W-0.04,row,0.06,1.05,0.4,'#6f8fe0',0.77);
+      const sm=new THREE.MeshStandardMaterial({color:'#46506e',emissive:'#000000',roughness:0.35});
+      MONITORS.push({x:sx,y:row+1.6,mat:sm,k:n});
+      monitorSetup(DEV_SETUPS[n],sx,row,sm);
+      deskProps(n,sx,row,dx);
       chair(sx,row+1.6,N,PAL.blue);}
-  }
+  });
   for(let i=0;i<4;i++)trash(15.6+i*4,9.45);
   plant(29.4,9.4);plant(14.6,9.4);plant(29.4,0.7,1.2);printer(26.5,8.5);
   // 엘리베이터 홀
@@ -449,6 +495,23 @@ function buildFurniture(){
 }
 const M=new THREE.Matrix4(),col=new THREE.Color();
 buildWalls();buildFurniture();
+// Clawd 는 사람보다 넓어서, 자리 그대로면 탁자·소파·벽에 파묻힘 → 겹치지 않는 가장 가까운 바닥으로
+function segDist(px,py,s){const dx=s.x1-s.x0,dy=s.y1-s.y0,L=dx*dx+dy*dy;const t=L?Math.max(0,Math.min(1,((px-s.x0)*dx+(py-s.y0)*dy)/L)):0;
+  return Math.hypot(px-(s.x0+dx*t),py-(s.y0+dy*t));}
+// 반경은 팔 끝까지(두리번거려도 안 닿게). 의자도 장애물이지만, 그 자리의 의자는 치우니 뺌
+const CLAWD_R=0.86;
+function clearSpot(x,y,r,own){if(x<r||y<r||x>GW-r||y>GH-r)return false;
+  if(SOLID.some(([bx,by,bw,bd])=>x>bx-r&&x<bx+bw+r&&y>by-r&&y<by+bd+r))return false;
+  if(CHAIRS.some((ch,i)=>i!==own&&Math.hypot(ch.x-x,ch.y-y)<r+0.25))return false;
+  return !SEGS.some(sg=>segDist(x,y,sg)<r);}
+function mascotSpot(x,y){const own=CHAIRS.findIndex(ch=>Math.hypot(ch.x-x,ch.y-y)<0.35);
+  for(let d=0;d<=2.4;d+=0.1)for(let k=0;k<(d?32:1);k++){const a=k/32*2*PI,nx=x+Math.cos(a)*d,ny=y+Math.sin(a)*d;
+    if(clearSpot(nx,ny,CLAWD_R,own))return [nx,ny,own];}
+  return [x,y,own];}
+// [x, y, 방향, 앉기(안 함), 치울 의자]
+// 라운지는 벽을 허문 넓은 바닥에 따로 (소파·스툴 자리는 Clawd 에게 좁음)
+const MASCOT_BASE={...SLOTS,lounge:[[1.9,14.2,E],[4.4,13.2,W],[5.1,11.9,S],[2.0,16.6,N],[3.6,17.4,N],[5.6,17.6,N]]};
+const MASCOT_SLOTS=Object.fromEntries(Object.entries(MASCOT_BASE).map(([k,l])=>[k,l.map(s=>{const [x,y,own]=mascotSpot(s[0],s[1]);return [x,y,s[2],0,own];})]));
 
 // ───────── 길찾기 (0.5칸 격자 A*) ─────────
 const NC=0.5,NX=GW/NC,NY=GH/NC,blocked=new Uint8Array(NX*NY),edges=new Uint8Array(NX*NY);
@@ -506,40 +569,41 @@ function buildHuman(c){
   const hr=mesh(geo('hair',()=>new THREE.SphereGeometry(1,20,14,0,PI*2,0,PI*0.58)),hair,head);hr.scale.setScalar(0.215);hr.position.set(0,0.02,-0.02);hr.rotation.x=-0.35;
   for(const s of [-1,1]){const e=mesh(geo('s',()=>new THREE.SphereGeometry(1,20,14)),dark,head,false);e.scale.set(0.025,0.032,0.02);e.position.set(s*0.075,0,0.18);}
   const mouth=mesh(BOX,dark,head,false);mouth.scale.set(0.06,0.012,0.01);mouth.position.set(0,-0.08,0.19);
-  return {root,mats,hip,legs,torso,arms,head,mouth,kind:'human',top:1.9};
+  return {root,mats,hip,legs,torso,arms,head,mouth,kind:'human',top:1.9,sitTop:1.56};
 }
-function buildMascot(c){ // 오리지널 마스코트: 동그란 몸 + 더듬이 전구
-  const root=new THREE.Group(),mats=[];const m=(color)=>{const x=charMat(color);mats.push(x);return x;};
-  const bodyM=m(c.color),belly=m(shade(c.color,0.55)),white=m('#ffffff'),dark=m('#24273a'),cheek=m('#ff8fb0'),foot=m(shade(c.color,-0.25));
-  const bulbM=m(PAL.yellow);bulbM.emissive.set(PAL.yellow);bulbM.emissiveIntensity=0.3;
+// Clawd: Claude Code 마스코트. 터미널 그림(▐▛███▜▌ / ▝▜█████▛▘ / ▘▘ ▝▝)의 4분할 블록을 한 칸씩 복셀로 옮김
+const CLAWD='#D97757',CLAWD_PW=0.075,CLAWD_PH=0.12,CLAWD_D=0.6,CLAWD_SIT=0.37,CLAWD_SCALE=1.4;
+function buildClawd(c){
+  const root=new THREE.Group(),mats=[];
+  const m=(color)=>{const x=charMat(color);mats.push(x);return x;};
+  const body=m(CLAWD),eyeM=m('#1a1412'),PW=CLAWD_PW,PH=CLAWD_PH,D=CLAWD_D,sc=(c.data.sub?0.85:1)*CLAWD_SCALE;
+  body.emissive.set(CLAWD);body.emissiveIntensity=0.32;  // 그늘진 앞면도 Clawd 색이 나도록
+  root.scale.setScalar(sc);
+  // 칸(col 0~18, 가운데 9) · 줄(row 0=발끝) 좌표로 상자
+  const px=(g,c0,c1,r0,r1,z0,z1,mt,x0=0,y0=0)=>{const o=mesh(BOX,mt,g);o.scale.set((c1-c0)*PW,(r1-r0)*PH,z1-z0);
+    o.position.set(((c0+c1)/2-9)*PW-x0,(r0+r1)/2*PH-y0,(z0+z1)/2);return o;};
   const torso=new THREE.Group();root.add(torso);
-  const S1=geo('s',()=>new THREE.SphereGeometry(1,20,14));
-  const b=mesh(S1,bodyM,torso);b.scale.set(0.42,0.4,0.4);b.position.y=0.46;
-  const be=mesh(S1,belly,torso);be.scale.set(0.27,0.24,0.14);be.position.set(0,0.38,0.29);
-  const head=new THREE.Group();head.position.y=0.5;torso.add(head);
-  for(const s of [-1,1]){const w=mesh(S1,white,head);w.scale.set(0.11,0.13,0.06);w.position.set(s*0.15,0.08,0.34);
-    const p=mesh(S1,dark,head,false);p.scale.set(0.055,0.07,0.03);p.position.set(s*0.14,0.07,0.39);
-    const ch=mesh(S1,cheek,head,false);ch.scale.set(0.06,0.035,0.02);ch.position.set(s*0.27,-0.05,0.3);}
-  const mouth=mesh(BOX,dark,head,false);mouth.scale.set(0.07,0.015,0.01);mouth.position.set(0,-0.06,0.4);
-  const ant=new THREE.Group();ant.position.set(0.05,0.36,0);head.add(ant);
-  const st=mesh(geo('c8',()=>new THREE.CylinderGeometry(1,1,1,8)),foot,ant);st.scale.set(0.02,0.28,0.02);st.position.y=0.14;st.rotation.z=-0.25;
-  const bulb=mesh(S1,bulbM,ant);bulb.scale.setScalar(0.075);bulb.position.set(0.07,0.3,0);
-  const legs=[];for(const s of [-1,1]){const L=new THREE.Group();L.position.set(s*0.18,0.08,0.04);root.add(L);const f=mesh(S1,foot,L);f.scale.set(0.12,0.08,0.15);legs.push(L);}
-  const arms=[];for(const s of [-1,1]){const A=new THREE.Group();A.position.set(s*0.4,0.48,0);torso.add(A);
-    const a=mesh(S1,bodyM,A);a.scale.set(0.07,0.15,0.07);a.position.y=-0.1;arms.push(A);}
-  return {root,mats,legs,torso,arms,head,mouth,bulb,bulbM,kind:'mascot',top:1.45};
+  px(torso,3,15,1,5,-D/2,D/2,body);
+  const eyes=[5,12].map(k=>px(torso,k,k+1,3,4,D/2-0.02,D/2+0.012,eyeM));eyes.forEach(e=>{e.castShadow=false;e.userData.y=e.position.y;});
+  const arms=[-1,1].map(s=>{const A=new THREE.Group();A.position.set(s*6*PW,2.5*PH,0);torso.add(A);
+    s<0?px(A,1,3,2,3,-0.1,0.1,body,-6*PW,2.5*PH):px(A,15,17,2,3,-0.1,0.1,body,6*PW,2.5*PH);return A;});
+  const legs=[];for(const k of [4,6,11,13])for(const z of [D/2-0.16,-D/2+0.02]){const L=px(torso,k,k+1,0,1,z,z+0.14,body);L.userData.y=L.position.y;legs.push(L);}
+  if(c.data.sub)px(torso,7.5,10.5,5,5.5,-0.12,0.12,m(c.color));  // 서브에이전트: 머리 위 색 명찰
+  const top=5.5*PH*sc;
+  return {root,mats,legs,torso,arms,eyes,sc,kind:'clawd',top,sitTop:top+CLAWD_SIT};
 }
 function addProp(model,pose){
   if(model.prop){model.prop.parent.remove(model.prop);model.prop=null;}
-  const g=new THREE.Group(),hu=model.kind==='human';let z=hu?0.28:0.42,y=hu?0.25:0.3;
+  const g=new THREE.Group(),hu=model.kind==='human';let z=hu?0.28:CLAWD_D/2+0.08,y=hu?0.25:2.5*CLAWD_PH;
   if(pose==='read'){const p1=mesh(BOX,mat('#ffffff'),g);p1.scale.set(0.16,0.2,0.02);p1.position.set(-0.08,0,0);p1.rotation.y=0.35;
     const p2=p1.clone();p2.position.x=0.08;p2.rotation.y=-0.35;g.add(p2);const sp=mesh(BOX,mat(PAL.red),g);sp.scale.set(0.02,0.2,0.03);}
   else if(pose==='browse'){const tb=mesh(BOX,mat('#2a2d3d'),g);tb.scale.set(0.26,0.18,0.02);const sc=mesh(BOX,mat(PAL.sky,{emissive:PAL.sky,ei:0.6}),g);sc.scale.set(0.22,0.14,0.005);sc.position.z=0.012;tb.rotation.x=-0.5;sc.rotation.x=-0.5;}
-  else if(pose==='coffee'){const cu=mesh(geo('c20',()=>new THREE.CylinderGeometry(1,1,1,20)),mat('#ffffff'),g);cu.scale.set(0.05,0.1,0.05);g.position.x=0.18;}
+  else if(pose==='coffee'){const cu=mesh(geo('c20',()=>new THREE.CylinderGeometry(1,1,1,20)),mat('#ffffff'),g);cu.scale.set(0.05,0.1,0.05);
+    if(hu)g.position.x=0.18;else{g.position.x=7.3*CLAWD_PW;z=0;y=3*CLAWD_PH+0.05;}}
   else return;
   g.position.set(g.position.x||0,y,z);model.torso.add(g);model.prop=g;
 }
-function makeModel(c){const md=mode==='mascot'?buildMascot(c):buildHuman(c);scene.add(md.root);c.model=md;c.modelMode=mode;c.prop=null;
+function makeModel(c){const md=mode==='mascot'&&!c.user?buildClawd(c):buildHuman(c);/* '나'는 마스코트 모드에서도 사람 */scene.add(md.root);c.model=md;c.modelMode=mode;c.prop=null;
   md.root.traverse(o=>{if(o.isMesh)o.castShadow=true;});return md;}
 function dropModel(c){if(c.model){scene.remove(c.model.root);c.model.mats.forEach(m=>m.dispose());c.model=null;}}
 
@@ -550,7 +614,9 @@ function poseModel(c,t,dt){
   const p=walking?'walk':(a.stuck?'think':a.pose);
   if(md.propPose!==p){addProp(md,p==='read'||p==='browse'||p==='coffee'?p:'');md.propPose=p;}
   const sw=walking?Math.sin(t*9+c.seed):0;
-  md.legs.forEach((L,i)=>{const s=i?1:-1;L.rotation.x=sit?(hu?-PI/2:-0.6):sw*0.6*s;});
+  const lerp=(o,v)=>o+(v-o)*Math.min(1,dt*10);
+  if(!hu){poseClawd(c,md,a,p,t,sit,walking,sw,lerp);return;}
+  md.legs.forEach((L,i)=>{const s=i?1:-1;L.rotation.x=sit?-PI/2:sw*0.6*s;});
   // 팔
   let la=walking?-sw*0.5:0,ra=walking?sw*0.5:0,laz=0,raz=0;
   if(p==='read'||p==='browse'){la=ra=-1.0;laz=0.35;raz=-0.35;}
@@ -560,17 +626,30 @@ function poseModel(c,t,dt){
   else if(p==='think'){ra=-2.2;raz=0.5;}
   else if(p==='coffee'){ra=-1.3;raz=-0.2;}
   else if(p==='talk'||p==='ask'){ra=-0.6+Math.sin(t*4+c.seed)*0.4;}
-  const lerp=(o,v)=>o+(v-o)*Math.min(1,dt*10);
   md.arms[0].rotation.x=lerp(md.arms[0].rotation.x,la);md.arms[1].rotation.x=lerp(md.arms[1].rotation.x,ra);
   md.arms[0].rotation.z=lerp(md.arms[0].rotation.z,laz);md.arms[1].rotation.z=lerp(md.arms[1].rotation.z,raz);
-  if(hu){md.hip.position.y=sit?0.5:0.78;md.torso.position.y=sit?0.5:0.78+(walking?Math.abs(sw)*0.03:0);
-    md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.25:p==='think'?-0.1:0;md.head.rotation.z=p==='think'?0.15:0;}
-  else{const hop=walking?Math.abs(Math.sin(t*9+c.seed))*0.12:Math.sin(t*2+c.seed)*0.01;
-    md.torso.position.y=hop-(sit?0.08:0);md.torso.scale.set(1,walking?1+Math.sin(t*18+c.seed)*0.04:1,1);
-    md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.2:0;
-    const busy=a.busy||a.stuck;md.bulbM.color.set(a.stuck?PAL.red:PAL.yellow);md.bulbM.emissive.set(a.stuck?PAL.red:PAL.yellow);
-    md.bulbM.emissiveIntensity=busy?(Math.sin(t*8)>0?1.4:0.4):0.25;}
+  md.hip.position.y=sit?0.5:0.78;md.torso.position.y=sit?0.5:0.78+(walking?Math.abs(sw)*0.03:0);
+  md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.25:p==='think'?-0.1:0;md.head.rotation.z=p==='think'?0.15:0;
   md.mouth.scale.x=a.stuck?0.09:p==='talk'?0.06+Math.abs(Math.sin(t*10))*0.04:0.06;
+}
+// Clawd: 다리 8개를 번갈아 들며 걷고, 팔(옆 돌기)을 위아래로 흔든다. 고민 중엔 눈이 위로, 막히면 눈이 찌그러지고 몸이 떨린다
+function poseClawd(c,md,a,p,t,sit,walking,sw,lerp){
+  md.legs.forEach((L,i)=>{L.position.y=L.userData.y+(walking?Math.max(0,Math.sin(t*12+c.seed+(((i>>1)+(i&1))%2)*PI))*0.05:0);});
+  const think=a.busy&&!a.stuck&&!walking;
+  md.torso.position.y=(sit?CLAWD_SIT/md.sc:0)+(walking?Math.abs(sw)*0.06:think?Math.abs(Math.sin(t*3+c.seed))*0.025:0);
+  md.torso.position.x=a.stuck&&!walking?Math.sin(t*40)*0.012:0;
+  md.torso.rotation.x=lerp(md.torso.rotation.x,p==='read'||p==='browse'||p==='type'?0.12:0);
+  // 팔: up>0 이면 끝이 올라감, fwd>0 이면 앞으로 모음
+  let lu=walking?sw*0.35:0,ru=walking?-sw*0.35:0,fwd=0;
+  if(p==='read'||p==='browse'){lu=ru=0.45;fwd=0.12;}
+  else if(p==='type'){lu=0.15+Math.sin(t*16+c.seed)*0.22;ru=0.15-Math.sin(t*16+c.seed)*0.22;fwd=0.08;}
+  else if(p==='rack'){ru=1.1+Math.sin(t*3+c.seed)*0.25;lu=-0.1;}
+  else if(p==='meet'){Math.floor(t*1.6+c.seed)%2?(lu=1.2):(ru=1.2);}
+  else if(p==='think'){ru=0.9+Math.sin(t*5)*0.1;}
+  else if(p==='talk'||p==='ask'){ru=0.4+Math.sin(t*4+c.seed)*0.4;}
+  md.arms.forEach((A,i)=>{const s=i?1:-1;A.rotation.z=lerp(A.rotation.z,s*(i?ru:lu));A.rotation.y=lerp(A.rotation.y,-s*fwd);});
+  const blink=((t+c.seed*0.37)%4.2)<0.13;
+  md.eyes.forEach(e=>{e.scale.y=CLAWD_PH*(a.stuck?0.35:blink?0.12:1);e.position.y=e.userData.y+(think?0.025:0);});
 }
 
 // ───────── 카메라 ─────────
@@ -632,20 +711,30 @@ function applySnapshot(msg){
   const groups={};for(const a of visible)(groups[a.room]=groups[a.room]||[]).push(a);
   const seen=new Set();
   for(const a of visible){seen.add(a.id);let c=chars.get(a.id);
-    const g=groups[a.room],i=g.indexOf(a),sl=SLOTS[a.room]||SLOTS.mydesk,s=sl[i%sl.length],lap=Math.floor(i/sl.length);
+    const SL=mode==='mascot'?MASCOT_SLOTS:SLOTS,g=groups[a.room],i=g.indexOf(a),sl=SL[a.room]||SL.mydesk,s=sl[i%sl.length],lap=Math.floor(i/sl.length);
     const tx=s[0]+lap*0.4,ty=s[1]+lap*0.4;
     if(!c){const seed=parseInt(a.id.slice(0,6),16)%97;
       const color=a.sub?SUB_COLORS[([...chars.values()].filter(x=>x.data.sub).length+seed)%SUB_COLORS.length]:PAL.blue;
       c={id:a.id,x:instant?tx:ELEV.x,y:instant?ty:ELEV.y,path:[],alpha:instant?1:0,color,hair:HAIRS[seed%HAIRS.length],seed,
         room:instant?a.room:'elevator',goal:null,face:instant?s[2]:E,faceTarget:s[2],sit:false,data:a};chars.set(a.id,c);}
     c.data=a;c.leaving=false;
-    if(!c.goal||c.goal.x!==tx||c.goal.y!==ty){c.goal={x:tx,y:ty,a:s[2],sit:!!s[3]};c.room=a.room;c.path=instant?[]:route(c,tx,ty);c.sit=false;
+    if(!c.goal||c.goal.x!==tx||c.goal.y!==ty){c.goal={x:tx,y:ty,a:s[2],sit:!!s[3],chair:s[4]??-1};c.room=a.room;c.path=instant?[]:route(c,tx,ty);c.sit=false;
       if(instant){c.sit=!!s[3];c.faceTarget=c.face=s[2];}}
   }
   for(const c of chars.values())if(!seen.has(c.id)&&!c.leaving){c.leaving=true;c.data={...c.data,busy:false,stuck:false,say:''};
     c.goal={x:ELEV.x,y:ELEV.y,a:W,sit:false};c.room='elevator';c.sit=false;c.path=route(c,ELEV.x,ELEV.y);}
   renderSide();
 }
+// Clawd 가 볼 곳: 일할 땐 가구 쪽으로 조금씩 흔들리며, 고민하면 두리번, 막히면 이쪽(카메라)을, 보고할 땐 나를, 라운지에선 서로를
+const CAMERA_FACE=PI/4,LOUNGE_MID={x:3.6,y:13.4};
+function clawdFace(c,t){const a=c.data,base=c.goal.a,s=c.seed;
+  if(a.stuck)return CAMERA_FACE+Math.sin(t*1.3+s)*0.15;
+  if(a.busy)return base+Math.sin(t*0.6+s)*0.7+Math.sin(t*0.23+s*2)*0.3;
+  if(c.room==='mydesk')return Math.atan2(USER_SEAT.x-c.x,USER_SEAT.y-c.y)+Math.sin(t*0.4+s)*0.12;
+  if(c.room==='lounge'){const o=[...chars.values()].find(x=>x!==c&&x.room==='lounge'&&!x.path.length);
+    const tx=o?o.x:LOUNGE_MID.x,ty=o?o.y:LOUNGE_MID.y;return Math.atan2(tx-c.x,ty-c.y)+Math.sin(t*0.3+s)*0.25;}
+  if(c.room==='elevator')return E+Math.sin(t*0.5+s)*0.2;
+  return base+Math.sin(t*0.5+s)*0.12;}
 function angLerp(a,b,k){let d=((b-a+PI)%(2*PI)+2*PI)%(2*PI)-PI;return a+d*k;}
 function update(dt,t){
   let want=false;
@@ -655,7 +744,8 @@ function update(dt,t){
     if(c.path.length){const p=c.path[0],dx=p.x-c.x,dy=p.y-c.y,d=Math.hypot(dx,dy),sp=2.6*dt;
       c.faceTarget=Math.atan2(dx,dy);
       if(d<=sp){c.x=p.x;c.y=p.y;c.path.shift();if(!c.path.length&&c.goal){c.faceTarget=c.goal.a;c.sit=c.goal.sit;}}else{c.x+=dx/d*sp;c.y+=dy/d*sp;}}
-    c.face=angLerp(c.face??0,c.faceTarget??0,Math.min(1,dt*8));
+    if(mode==='mascot'&&!c.user&&!c.path.length&&c.goal&&!c.leaving)c.faceTarget=clawdFace(c,t);
+    c.face=angLerp(c.face??0,c.faceTarget??0,Math.min(1,dt*(mode==='mascot'?4:8)));
     if(!c.user){if(!c.leaving)c.alpha=Math.min(1,c.alpha+dt*2.2);else if(!c.path.length){c.alpha-=dt*2;}}
     const md=c.model;md.root.position.set(c.x,0,c.y);md.root.rotation.y=c.face;
     md.mats.forEach(m=>{m.opacity=Math.max(0,c.alpha);m.transparent=c.alpha<0.999;m.depthWrite=c.alpha>=0.999;});
@@ -667,8 +757,11 @@ function update(dt,t){
   ELEVATOR.l.position.z=7.5+0.5-elevOpen*0.95;ELEVATOR.r.position.z=8.5+0.5+elevOpen*0.95;
   ELEVATOR.l.scale.z=ELEVATOR.r.scale.z=1-elevOpen*0.9;ELEVATOR.l.position.z=7.5+(1-elevOpen*0.9)/2;ELEVATOR.r.position.z=9.5-(1-elevOpen*0.9)/2;
   ELEVATOR.lamp.material=elevOpen>0.05?mat(PAL.yellow,{emissive:PAL.yellow,ei:1}):mat('#4a4f68');
-  // 모니터: 앉아서 일하는 자리만 켜기
-  for(const mo of MONITORS){const on=[...chars.values()].some(c=>!c.path.length&&c.room==='dev'&&Math.abs(c.x-mo.x)<0.3&&Math.abs(c.y-mo.y)<0.3);
+  // 마스코트 모드: Clawd 가 자기 자리에 가까이 오면 그 자리 의자를 치움
+  const taken=new Set(mode==='mascot'?[...chars.values()].filter(c=>c.goal&&!c.leaving&&Math.hypot(c.x-c.goal.x,c.y-c.goal.y)<2).map(c=>c.goal.chair):[]);
+  CHAIRS.forEach((ch,i)=>{ch.g.visible=!taken.has(i);});
+  // 모니터: 그 자리에서 일하는 동안만 켜기
+  for(const mo of MONITORS){const on=[...chars.values()].some(c=>!c.path.length&&c.room==="dev"&&Math.hypot(c.x-mo.x,c.y-mo.y)<1.3);
     mo.mat.emissive.set(on?PAL.sky:'#000000');mo.mat.emissiveIntensity=on?(0.7+Math.sin(t*6+mo.k)*0.2):0;mo.mat.color.set(on?'#8be6de':'#46506e');}
   CLOCK.hand.rotation.z=-t*0.5;CLOCK.hand.position.set(22.2+Math.sin(t*0.5)*0.06,2.65+Math.cos(t*0.5)*0.06,0.11);
   ANIM.forEach(f=>f(t));
@@ -716,7 +809,7 @@ function overlays(t,list){
     g.font=`${kind==='say'?600:700} ${Math.round(11*s)}px ${FONT}`;let w=Math.max(...lines.map(l=>g.measureText(l).width));
     g.font=`600 ${Math.round(9.5*s)}px ${FONT}`;if(sub)w=Math.max(w,Math.min(g.measureText(sub).width,190*s));
     w+=18*s;const lh=15*s,h=lines.length*lh+(sub?13*s:0)+12*s;
-    const headTop=scr(c.x,c.model.top*(c.sit?0.82:1),c.y)[1];
+    const headTop=scr(c.x,c.sit?c.model.sitTop:c.model.top,c.y)[1];
     let bx=fx-w/2,by=headTop-h-8*s;
     for(let k=0;k<6;k++){const hit=placed.find(r=>bx<r.x+r.w&&bx+w>r.x&&by<r.y+r.h&&by+h>r.y);if(!hit)break;by=hit.y-h-4*s;}
     placed.push({x:bx,y:by,w,h});
@@ -739,7 +832,7 @@ document.getElementById('people').addEventListener('click',e=>{const p=e.target.
 glc.addEventListener('pointerdown',()=>{focusId=null;});
 setInterval(()=>{if(!focusId)return;const c=chars.get(focusId);if(!c){focusId=null;return;}
   target.x+=(c.x-target.x)*0.25;target.z+=(c.y-target.z)*0.25;target.y=0.8;updateCamera();},50);
-window.__office={scene,chars,camera,focusOn};
+window.__office={scene,chars,camera,focusOn,MASCOT_SLOTS};
 
 // ───────── 사이드 패널 ─────────
 const $=id=>document.getElementById(id);
@@ -800,7 +893,7 @@ setInterval(()=>{if(D.sessions.length)renderSide();},1000);
 $('legend').innerHTML=['library','dev','server','info','meeting','mydesk','lounge','elevator'].map(k=>{const R=ROOMS[k];
   return `<div><i style="background:${R.color}"></i><b>${R.name}</b><span>${R.what}</span></div>`;}).join('');
 // 모드
-function setMode(m){mode=m;document.querySelectorAll('.mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+function setMode(m){const changed=mode!==m;mode=m;if(changed&&D.agents.length)applySnapshot(D);document.querySelectorAll('.mode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   try{localStorage.setItem('office-mode',m);}catch(e){}}
 document.querySelectorAll('.mode button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));setMode(mode);
 
