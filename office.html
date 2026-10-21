@@ -113,7 +113,7 @@ aside{background:var(--card);border:1px solid var(--line);border-radius:14px;ove
     <div class="top"><span class="fl" id="flNo">–</span><div><b id="flName">Claude Office</b><span id="flTitle">연결 중…</span></div></div>
     <div class="live" id="live"><i></i>LIVE</div>
     <div class="ctrl"><button id="zin" title="확대">＋</button><button id="zout" title="축소">－</button><button id="zfit" title="처음 시점">⌂</button></div>
-    <div class="mode"><button data-m="human">🧑 사람</button><button data-m="mascot">🫧 마스코트</button></div>
+    <div class="mode"><button data-m="human">🧑 사람</button><button data-m="mascot">👾 Clawd</button></div>
     <div class="empty" id="empty"><div id="emptyMsg"></div></div>
   </div>
 
@@ -506,40 +506,40 @@ function buildHuman(c){
   const hr=mesh(geo('hair',()=>new THREE.SphereGeometry(1,20,14,0,PI*2,0,PI*0.58)),hair,head);hr.scale.setScalar(0.215);hr.position.set(0,0.02,-0.02);hr.rotation.x=-0.35;
   for(const s of [-1,1]){const e=mesh(geo('s',()=>new THREE.SphereGeometry(1,20,14)),dark,head,false);e.scale.set(0.025,0.032,0.02);e.position.set(s*0.075,0,0.18);}
   const mouth=mesh(BOX,dark,head,false);mouth.scale.set(0.06,0.012,0.01);mouth.position.set(0,-0.08,0.19);
-  return {root,mats,hip,legs,torso,arms,head,mouth,kind:'human',top:1.9};
+  return {root,mats,hip,legs,torso,arms,head,mouth,kind:'human',top:1.9,sitTop:1.56};
 }
-function buildMascot(c){ // 오리지널 마스코트: 동그란 몸 + 더듬이 전구
+// Clawd: Claude Code 마스코트. 터미널 그림(▐▛███▜▌ / ▝▜█████▛▘ / ▘▘ ▝▝)의 4분할 블록을 한 칸씩 복셀로 옮김
+const CLAWD='#D97757',CLAWD_PW=0.075,CLAWD_PH=0.12,CLAWD_D=0.6,CLAWD_SIT=0.37;
+function buildClawd(c){
   const root=new THREE.Group(),mats=[];const m=(color)=>{const x=charMat(color);mats.push(x);return x;};
-  const bodyM=m(c.color),belly=m(shade(c.color,0.55)),white=m('#ffffff'),dark=m('#24273a'),cheek=m('#ff8fb0'),foot=m(shade(c.color,-0.25));
-  const bulbM=m(PAL.yellow);bulbM.emissive.set(PAL.yellow);bulbM.emissiveIntensity=0.3;
+  const body=m(CLAWD),eyeM=m('#1a1412'),PW=CLAWD_PW,PH=CLAWD_PH,D=CLAWD_D,sc=c.data.sub?0.82:1;
+  body.emissive.set(CLAWD);body.emissiveIntensity=0.22;  // 그늘진 앞면도 Clawd 색이 나도록
+  root.scale.setScalar(sc);
+  // 칸(col 0~18, 가운데 9) · 줄(row 0=발끝) 좌표로 상자
+  const px=(g,c0,c1,r0,r1,z0,z1,mt,x0=0,y0=0)=>{const o=mesh(BOX,mt,g);o.scale.set((c1-c0)*PW,(r1-r0)*PH,z1-z0);
+    o.position.set(((c0+c1)/2-9)*PW-x0,(r0+r1)/2*PH-y0,(z0+z1)/2);return o;};
   const torso=new THREE.Group();root.add(torso);
-  const S1=geo('s',()=>new THREE.SphereGeometry(1,20,14));
-  const b=mesh(S1,bodyM,torso);b.scale.set(0.42,0.4,0.4);b.position.y=0.46;
-  const be=mesh(S1,belly,torso);be.scale.set(0.27,0.24,0.14);be.position.set(0,0.38,0.29);
-  const head=new THREE.Group();head.position.y=0.5;torso.add(head);
-  for(const s of [-1,1]){const w=mesh(S1,white,head);w.scale.set(0.11,0.13,0.06);w.position.set(s*0.15,0.08,0.34);
-    const p=mesh(S1,dark,head,false);p.scale.set(0.055,0.07,0.03);p.position.set(s*0.14,0.07,0.39);
-    const ch=mesh(S1,cheek,head,false);ch.scale.set(0.06,0.035,0.02);ch.position.set(s*0.27,-0.05,0.3);}
-  const mouth=mesh(BOX,dark,head,false);mouth.scale.set(0.07,0.015,0.01);mouth.position.set(0,-0.06,0.4);
-  const ant=new THREE.Group();ant.position.set(0.05,0.36,0);head.add(ant);
-  const st=mesh(geo('c8',()=>new THREE.CylinderGeometry(1,1,1,8)),foot,ant);st.scale.set(0.02,0.28,0.02);st.position.y=0.14;st.rotation.z=-0.25;
-  const bulb=mesh(S1,bulbM,ant);bulb.scale.setScalar(0.075);bulb.position.set(0.07,0.3,0);
-  const legs=[];for(const s of [-1,1]){const L=new THREE.Group();L.position.set(s*0.18,0.08,0.04);root.add(L);const f=mesh(S1,foot,L);f.scale.set(0.12,0.08,0.15);legs.push(L);}
-  const arms=[];for(const s of [-1,1]){const A=new THREE.Group();A.position.set(s*0.4,0.48,0);torso.add(A);
-    const a=mesh(S1,bodyM,A);a.scale.set(0.07,0.15,0.07);a.position.y=-0.1;arms.push(A);}
-  return {root,mats,legs,torso,arms,head,mouth,bulb,bulbM,kind:'mascot',top:1.45};
+  px(torso,3,15,1,5,-D/2,D/2,body);
+  const eyes=[5,12].map(k=>px(torso,k,k+1,3,4,D/2-0.02,D/2+0.012,eyeM));eyes.forEach(e=>{e.castShadow=false;e.userData.y=e.position.y;});
+  const arms=[-1,1].map(s=>{const A=new THREE.Group();A.position.set(s*6*PW,2.5*PH,0);torso.add(A);
+    s<0?px(A,1,3,2,3,-0.1,0.1,body,-6*PW,2.5*PH):px(A,15,17,2,3,-0.1,0.1,body,6*PW,2.5*PH);return A;});
+  const legs=[];for(const k of [4,6,11,13])for(const z of [D/2-0.16,-D/2+0.02]){const L=px(torso,k,k+1,0,1,z,z+0.14,body);L.userData.y=L.position.y;legs.push(L);}
+  if(c.data.sub)px(torso,7.5,10.5,5,5.5,-0.12,0.12,m(c.color));  // 서브에이전트: 머리 위 색 명찰
+  const top=5.5*PH*sc;
+  return {root,mats,legs,torso,arms,eyes,sc,kind:'clawd',top,sitTop:top+CLAWD_SIT};
 }
 function addProp(model,pose){
   if(model.prop){model.prop.parent.remove(model.prop);model.prop=null;}
-  const g=new THREE.Group(),hu=model.kind==='human';let z=hu?0.28:0.42,y=hu?0.25:0.3;
+  const g=new THREE.Group(),hu=model.kind==='human';let z=hu?0.28:CLAWD_D/2+0.08,y=hu?0.25:2.5*CLAWD_PH;
   if(pose==='read'){const p1=mesh(BOX,mat('#ffffff'),g);p1.scale.set(0.16,0.2,0.02);p1.position.set(-0.08,0,0);p1.rotation.y=0.35;
     const p2=p1.clone();p2.position.x=0.08;p2.rotation.y=-0.35;g.add(p2);const sp=mesh(BOX,mat(PAL.red),g);sp.scale.set(0.02,0.2,0.03);}
   else if(pose==='browse'){const tb=mesh(BOX,mat('#2a2d3d'),g);tb.scale.set(0.26,0.18,0.02);const sc=mesh(BOX,mat(PAL.sky,{emissive:PAL.sky,ei:0.6}),g);sc.scale.set(0.22,0.14,0.005);sc.position.z=0.012;tb.rotation.x=-0.5;sc.rotation.x=-0.5;}
-  else if(pose==='coffee'){const cu=mesh(geo('c20',()=>new THREE.CylinderGeometry(1,1,1,20)),mat('#ffffff'),g);cu.scale.set(0.05,0.1,0.05);g.position.x=0.18;}
+  else if(pose==='coffee'){const cu=mesh(geo('c20',()=>new THREE.CylinderGeometry(1,1,1,20)),mat('#ffffff'),g);cu.scale.set(0.05,0.1,0.05);
+    if(hu)g.position.x=0.18;else{g.position.x=7.3*CLAWD_PW;z=0;y=3*CLAWD_PH+0.05;}}
   else return;
   g.position.set(g.position.x||0,y,z);model.torso.add(g);model.prop=g;
 }
-function makeModel(c){const md=mode==='mascot'?buildMascot(c):buildHuman(c);scene.add(md.root);c.model=md;c.modelMode=mode;c.prop=null;
+function makeModel(c){const md=mode==='mascot'&&!c.user?buildClawd(c):buildHuman(c);/* '나'는 마스코트 모드에서도 사람 */scene.add(md.root);c.model=md;c.modelMode=mode;c.prop=null;
   md.root.traverse(o=>{if(o.isMesh)o.castShadow=true;});return md;}
 function dropModel(c){if(c.model){scene.remove(c.model.root);c.model.mats.forEach(m=>m.dispose());c.model=null;}}
 
@@ -550,7 +550,9 @@ function poseModel(c,t,dt){
   const p=walking?'walk':(a.stuck?'think':a.pose);
   if(md.propPose!==p){addProp(md,p==='read'||p==='browse'||p==='coffee'?p:'');md.propPose=p;}
   const sw=walking?Math.sin(t*9+c.seed):0;
-  md.legs.forEach((L,i)=>{const s=i?1:-1;L.rotation.x=sit?(hu?-PI/2:-0.6):sw*0.6*s;});
+  const lerp=(o,v)=>o+(v-o)*Math.min(1,dt*10);
+  if(!hu){poseClawd(c,md,a,p,t,sit,walking,sw,lerp);return;}
+  md.legs.forEach((L,i)=>{const s=i?1:-1;L.rotation.x=sit?-PI/2:sw*0.6*s;});
   // 팔
   let la=walking?-sw*0.5:0,ra=walking?sw*0.5:0,laz=0,raz=0;
   if(p==='read'||p==='browse'){la=ra=-1.0;laz=0.35;raz=-0.35;}
@@ -560,17 +562,30 @@ function poseModel(c,t,dt){
   else if(p==='think'){ra=-2.2;raz=0.5;}
   else if(p==='coffee'){ra=-1.3;raz=-0.2;}
   else if(p==='talk'||p==='ask'){ra=-0.6+Math.sin(t*4+c.seed)*0.4;}
-  const lerp=(o,v)=>o+(v-o)*Math.min(1,dt*10);
   md.arms[0].rotation.x=lerp(md.arms[0].rotation.x,la);md.arms[1].rotation.x=lerp(md.arms[1].rotation.x,ra);
   md.arms[0].rotation.z=lerp(md.arms[0].rotation.z,laz);md.arms[1].rotation.z=lerp(md.arms[1].rotation.z,raz);
-  if(hu){md.hip.position.y=sit?0.5:0.78;md.torso.position.y=sit?0.5:0.78+(walking?Math.abs(sw)*0.03:0);
-    md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.25:p==='think'?-0.1:0;md.head.rotation.z=p==='think'?0.15:0;}
-  else{const hop=walking?Math.abs(Math.sin(t*9+c.seed))*0.12:Math.sin(t*2+c.seed)*0.01;
-    md.torso.position.y=hop-(sit?0.08:0);md.torso.scale.set(1,walking?1+Math.sin(t*18+c.seed)*0.04:1,1);
-    md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.2:0;
-    const busy=a.busy||a.stuck;md.bulbM.color.set(a.stuck?PAL.red:PAL.yellow);md.bulbM.emissive.set(a.stuck?PAL.red:PAL.yellow);
-    md.bulbM.emissiveIntensity=busy?(Math.sin(t*8)>0?1.4:0.4):0.25;}
+  md.hip.position.y=sit?0.5:0.78;md.torso.position.y=sit?0.5:0.78+(walking?Math.abs(sw)*0.03:0);
+  md.head.rotation.x=p==='read'||p==='browse'||p==='type'?0.25:p==='think'?-0.1:0;md.head.rotation.z=p==='think'?0.15:0;
   md.mouth.scale.x=a.stuck?0.09:p==='talk'?0.06+Math.abs(Math.sin(t*10))*0.04:0.06;
+}
+// Clawd: 다리 8개를 번갈아 들며 걷고, 팔(옆 돌기)을 위아래로 흔든다. 고민 중엔 눈이 위로, 막히면 눈이 찌그러지고 몸이 떨린다
+function poseClawd(c,md,a,p,t,sit,walking,sw,lerp){
+  md.legs.forEach((L,i)=>{L.position.y=L.userData.y+(walking?Math.max(0,Math.sin(t*12+c.seed+(((i>>1)+(i&1))%2)*PI))*0.05:0);});
+  const think=a.busy&&!a.stuck&&!walking;
+  md.torso.position.y=(sit?CLAWD_SIT/md.sc:0)+(walking?Math.abs(sw)*0.06:think?Math.abs(Math.sin(t*3+c.seed))*0.025:0);
+  md.torso.position.x=a.stuck&&!walking?Math.sin(t*40)*0.012:0;
+  md.torso.rotation.x=lerp(md.torso.rotation.x,p==='read'||p==='browse'||p==='type'?0.12:0);
+  // 팔: up>0 이면 끝이 올라감, fwd>0 이면 앞으로 모음
+  let lu=walking?sw*0.35:0,ru=walking?-sw*0.35:0,fwd=0;
+  if(p==='read'||p==='browse'){lu=ru=0.3;fwd=0.7;}
+  else if(p==='type'){lu=0.1+Math.sin(t*16+c.seed)*0.25;ru=0.1-Math.sin(t*16+c.seed)*0.25;fwd=0.3;}
+  else if(p==='rack'){ru=1.1+Math.sin(t*3+c.seed)*0.25;lu=-0.1;}
+  else if(p==='meet'){Math.floor(t*1.6+c.seed)%2?(lu=1.2):(ru=1.2);}
+  else if(p==='think'){ru=0.9+Math.sin(t*5)*0.1;}
+  else if(p==='talk'||p==='ask'){ru=0.4+Math.sin(t*4+c.seed)*0.4;}
+  md.arms.forEach((A,i)=>{const s=i?1:-1;A.rotation.z=lerp(A.rotation.z,s*(i?ru:lu));A.rotation.y=lerp(A.rotation.y,-s*fwd);});
+  const blink=((t+c.seed*0.37)%4.2)<0.13;
+  md.eyes.forEach(e=>{e.scale.y=CLAWD_PH*(a.stuck?0.35:blink?0.12:1);e.position.y=e.userData.y+(think?0.025:0);});
 }
 
 // ───────── 카메라 ─────────
@@ -716,7 +731,7 @@ function overlays(t,list){
     g.font=`${kind==='say'?600:700} ${Math.round(11*s)}px ${FONT}`;let w=Math.max(...lines.map(l=>g.measureText(l).width));
     g.font=`600 ${Math.round(9.5*s)}px ${FONT}`;if(sub)w=Math.max(w,Math.min(g.measureText(sub).width,190*s));
     w+=18*s;const lh=15*s,h=lines.length*lh+(sub?13*s:0)+12*s;
-    const headTop=scr(c.x,c.model.top*(c.sit?0.82:1),c.y)[1];
+    const headTop=scr(c.x,c.sit?c.model.sitTop:c.model.top,c.y)[1];
     let bx=fx-w/2,by=headTop-h-8*s;
     for(let k=0;k<6;k++){const hit=placed.find(r=>bx<r.x+r.w&&bx+w>r.x&&by<r.y+r.h&&by+h>r.y);if(!hit)break;by=hit.y-h-4*s;}
     placed.push({x:bx,y:by,w,h});
