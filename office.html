@@ -703,15 +703,20 @@ function pickSelected(){const ss=D.sessions;if(!ss.length){selected=null;return;
     if(cur&&cur.working)return;const w=ss.filter(s=>s.working).sort((a,b)=>b.last-a.last)[0];
     if(w&&(!cur||now-cur.last>20)){selected=w.id;return;}if(!cur)selected=(ss.find(s=>s.present)||ss[0]).id;return;}
   if(!ss.some(s=>s.id===selected))selected=(ss.find(s=>s.present)||ss[0]).id;}
+// 자리: 방에 들어올 때 빈자리 중 하나를 무작위로 받고, 그 방에 있는 동안은 같은 자리
+const SEATS={}; // 방 → Map(직원 id → 자리 번호)
+function seatFor(room,id,n){const m=SEATS[room]||(SEATS[room]=new Map());if(m.has(id))return m.get(id);
+  const used=new Set(m.values()),free=[...Array(n).keys()].filter(i=>!used.has(i));
+  const idx=free.length?free[Math.floor(Math.random()*free.length)]:n+m.size;m.set(id,idx);return idx;}
 function applySnapshot(msg){
   serverOffset=msg.now*1000-Date.now();D=msg;userChar.data.name=msg.user||'나';
   const prev=selected;pickSelected();const instant=prev!==selected;
-  if(instant){for(const c of chars.values())dropModel(c);chars.clear();}
+  if(instant){for(const c of chars.values())dropModel(c);chars.clear();for(const k in SEATS)delete SEATS[k];}
   const visible=D.agents.filter(a=>a.session===selected);
-  const groups={};for(const a of visible)(groups[a.room]=groups[a.room]||[]).push(a);
+  for(const [room,m] of Object.entries(SEATS))for(const id of [...m.keys()])if(!visible.some(a=>a.id===id&&a.room===room))m.delete(id);
   const seen=new Set();
   for(const a of visible){seen.add(a.id);let c=chars.get(a.id);
-    const SL=mode==='mascot'?MASCOT_SLOTS:SLOTS,g=groups[a.room],i=g.indexOf(a),sl=SL[a.room]||SL.mydesk,s=sl[i%sl.length],lap=Math.floor(i/sl.length);
+    const SL=mode==='mascot'?MASCOT_SLOTS:SLOTS,sl=SL[a.room]||SL.mydesk,i=seatFor(a.room,a.id,sl.length),s=sl[i%sl.length],lap=Math.floor(i/sl.length);
     const tx=s[0]+lap*0.4,ty=s[1]+lap*0.4;
     if(!c){const seed=parseInt(a.id.slice(0,6),16)%97;
       const color=a.sub?SUB_COLORS[([...chars.values()].filter(x=>x.data.sub).length+seed)%SUB_COLORS.length]:PAL.blue;

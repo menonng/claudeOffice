@@ -13,6 +13,8 @@ const CHECK_EVERY = 30_000 // 서버가 살아 있는지 (다른 세션이 띄�
 const DONE_TO_LOUNGE = 20_000 // 응답이 끝나고 라운지로 가기까지
 const SUB_LEAVE = 4_000 // 서브에이전트가 일을 마치고 퇴근하기까지
 const LOG_KEEP = 40
+const THINK_TO_MEETING = 15_000 // 이만큼 넘게 고민하면 회의실로 (office.py 와 같은 규칙)
+const MEETING_THINKERS = 3 // 이만큼 이상 함께 고민하면 다 같이 회의실로
 
 const AGENT_TYPE_KO: Record<string, string> = {
   'general-purpose': '범용', Explore: '탐색', Plan: '설계', 'claude-code-guide': '가이드', 'statusline-setup': '설정',
@@ -182,6 +184,8 @@ export const register: Register = on => {
       const w = workerOf(o, agentId, now)
       if (w && w.mood !== 'stuck') set(w, now, w.room, 'think', w.detail)
     })
+    // 오래 고민하면 회의실로 옮겨 보이게 다시 그림
+    $.clock.after(THINK_TO_MEETING + 200, () => $.ui.invalidate('ui.render'))
     return yield* next(e)
   })
 
@@ -257,6 +261,10 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const o = await read($, office)
     const srv = await read($, server)
+    const now = await $.clock.now()
+    const thinkers = o.workers.filter(w => w.mood === 'think')
+    const roomOf = (w: Worker): Room =>
+      w.mood === 'think' && (thinkers.length >= MEETING_THINKERS || now - w.at > THINK_TO_MEETING) ? 'meeting' : w.room
     const mood = (w: Worker) =>
       w.mood === 'think' ? '💭 고민 중' : w.mood === 'stuck' ? w.detail : w.detail
     const stateText = { starting: '여는 중…', running: '열려 있음', stopped: '꺼짐', failed: '열지 못함' }[srv.state]
@@ -271,7 +279,7 @@ export const register: Register = on => {
         {srv.note ? <Text dimColor wrap="truncate">{srv.note}</Text> : null}
         <Box flexDirection="column">
           {o.workers.map(w => {
-            const R = ROOMS[w.room]
+            const R = ROOMS[roomOf(w)]
             return (
               <Text wrap="truncate">
                 <Text color={w.isSub ? w.color : PAL.blue}>● </Text>

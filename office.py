@@ -55,6 +55,8 @@ QUIET_TO_LOUNGE = 120         # 진행 중인 도구 없이 조용하면 라운�
 SUB_LEAVE_AFTER = 6           # 서브에이전트 일 끝나고 퇴근까지(초)
 SUB_QUIET_LEAVE = 240         # 서브에이전트가 이만큼 조용하면 퇴근(초)
 GONE_AFTER = 30 * 60          # 메인 세션이 이만큼 조용하면 사무실 비움(초)
+THINK_TO_MEETING = 15         # 이만큼 넘게 고민하면 회의실로 가서 고민(초)
+MEETING_THINKERS = 3          # 한 세션에서 이만큼 이상 함께 고민하면 다 같이 회의실로
 RESCAN_EVERY = 3.0
 POLL_EVERY = 0.4
 LOG_KEEP = 60
@@ -158,6 +160,7 @@ class Agent:
         self.done = False
         self.stuck = False
         self.busy = False
+        self.busy_since = 0.0     # 고민(모델 응답 기다림)을 시작한 때
         self.thinks = 0
         self.pending = {}
         self.tasks = []           # 메인 에이전트가 맡긴 Task: (prompt, 설명, 타입)
@@ -334,6 +337,7 @@ class Watcher:
                 elif t in ("thinking", "redacted_thinking"):
                     if not a.busy:
                         a.thinks += 1
+                        a.busy_since = ts
                     a.busy, a.done, a.stuck = True, False, False
                     a.detail = "고민 중…"
                 elif t == "text" and str(it.get("text", "")).strip():
@@ -364,6 +368,7 @@ class Watcher:
                 a.pending.pop(it.get("tool_use_id"), None)
                 if not a.busy:
                     a.thinks += 1
+                    a.busy_since = ts
                 a.busy = True
                 if it.get("is_error"):
                     a.stuck = True
@@ -392,6 +397,7 @@ class Watcher:
         a.detail = "📝 " + short(text, 50)
         a.done = a.stuck = False
         a.busy, a.thinks, a.say = True, 1, ""
+        a.busy_since = ts
         self._log(a, ts, ("📝 " if not a.is_sub else "📋 ") + short(text, 100), "prompt")
 
     def _sub_label(self, a, text):
@@ -439,6 +445,15 @@ class Watcher:
             agents.append(self._view(a, a.id, room, pose, detail, now))
             if now - a.last < 6 * 3600:
                 logs[a.id] = list(self.logs.get(a.id, []))[-30:]
+        # 오래 고민하거나, 한 세션에서 여럿이 함께 고민하면 회의실에 모여서 고민
+        thinking = collections.defaultdict(list)
+        for v in agents:
+            if v["busy"] and not v["stuck"]:
+                thinking[v["session"]].append(v)
+        for group in thinking.values():
+            for v in group:
+                if len(group) >= MEETING_THINKERS or now - v["thinkSince"] > THINK_TO_MEETING:
+                    v["room"], v["pose"] = "meeting", "meet"
         sessions.sort(key=lambda s: -s["last"])
         agents.sort(key=lambda x: (x["since"], x["id"]))
         return json.dumps({"sessions": sessions, "agents": agents, "logs": logs},
@@ -453,7 +468,7 @@ class Watcher:
             "say": a.say if pose == "talk" else "",
             "busy": a.busy and not a.pending and not quiet and room != "lounge",
             "stuck": a.stuck and room != "lounge",
-            "thinks": a.thinks, "tools": a.tools,
+            "thinks": a.thinks, "tools": a.tools, "thinkSince": round(a.busy_since, 1),
             "last": round(a.last, 1), "since": round(a.first_seen, 1),
         }
 
