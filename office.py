@@ -32,10 +32,12 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import sys
 import tempfile
 import threading
 import time
+import urllib.request
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -57,6 +59,11 @@ SUB_QUIET_LEAVE = 240         # 서브에이전트가 이만큼 조용하면 퇴
 GONE_AFTER = 30 * 60          # 메인 세션이 이만큼 조용하면 사무실 비움(초)
 THINK_TO_MEETING = 15         # 이만큼 넘게 고민하면 회의실로 가서 고민(초)
 MEETING_THINKERS = 3          # 한 세션에서 이만큼 이상 함께 고민하면 다 같이 회의실로
+RELAY_RETRY = 5               # 클라우드 중계(Firebase)가 끊기면 다시 붙기까지(초)
+
+# 클라우드 세션의 mod 가 보낸 기분(mood) → 방별 자세
+ROOM_POSE = {"library": "read", "dev": "type", "server": "rack", "info": "browse",
+             "meeting": "meet", "mydesk": "ask", "lounge": "coffee", "elevator": "idle"}
 RESCAN_EVERY = 3.0
 POLL_EVERY = 0.4
 LOG_KEEP = 60
@@ -184,6 +191,8 @@ class Watcher:
         self.snapshot = "{}"
         self._last_scan = 0.0
         self._known = []
+        self.remote = {}          # 클라우드 세션 id → mod 가 올린 상태 (Relay 스레드가 채움)
+        self.remote_lock = threading.Lock()
 
     # ── 파일 찾기/읽기 ──
     def _list_files(self):
@@ -445,6 +454,7 @@ class Watcher:
             agents.append(self._view(a, a.id, room, pose, detail, now))
             if now - a.last < 6 * 3600:
                 logs[a.id] = list(self.logs.get(a.id, []))[-30:]
+        self._build_remote(now, sessions, agents, logs)
         # 오래 고민하거나, 한 세션에서 여럿이 함께 고민하면 회의실에 모여서 고민
         thinking = collections.defaultdict(list)
         for v in agents:
@@ -458,6 +468,88 @@ class Watcher:
         agents.sort(key=lambda x: (x["since"], x["id"]))
         return json.dumps({"sessions": sessions, "agents": agents, "logs": logs},
                           ensure_ascii=False, separators=(",", ":"))
+
+    # ── 클라우드 세션 (Relay 로 받은 상태) ──
+    def remote_update(self, event, path, data):
+        """Firebase 스트리밍의 put/patch 한 건을 반영. path 는 /sessions 아래 경로"""
+        parts = [p for p in (path or "/").split("/") if p]
+        with self.remote_lock:
+            if not parts:
+                if event == "put":
+                    self.remote = dict(data) if isinstance(data, dict) else {}
+                elif isinstance(data, dict):
+                    for k, v in data.items():
+                        if v is None:
+                            self.remote.pop(k, None)
+                        else:
+                            self.remote[k] = v
+                return
+            sid = parts[0]
+            if len(parts) == 1:
+                if data is None:
+                    self.remote.pop(sid, None)
+                elif event == "put" or not isinstance(self.remote.get(sid), dict):
+                    self.remote[sid] = data
+                else:
+                    self.remote[sid].update(data)
+                return
+            node = self.remote.setdefault(sid, {})   # 더 깊은 경로: 그 자리만 바꿈
+            for key in parts[1:-1]:
+                node = node[int(key)] if isinstance(node, list) else node.setdefault(key, {})
+            last = parts[-1]
+            if isinstance(node, list):
+                i = int(last)
+                if i < len(node):
+                    node[i] = data
+            elif data is None:
+                node.pop(last, None)
+            else:
+                node[last] = data
+
+    def _build_remote(self, now, sessions, agents, logs):
+        with self.remote_lock:
+            remote = json.loads(json.dumps(self.remote))
+        for sid, snap in remote.items():
+            if not isinstance(snap, dict):
+                continue
+            at = (snap.get("at") or 0) / 1000
+            age = now - at
+            sess_id = "R" + hashlib.md5(sid.encode("utf-8")).hexdigest()[:9]
+            workers = [w for w in (snap.get("workers") or []) if isinstance(w, dict)]
+            present = age < GONE_AFTER and not snap.get("ended")
+            busy_moods = ("work", "think", "listen", "stuck")
+            sessions.append({
+                "id": sess_id, "project": f"☁ {snap.get('project') or '클라우드'}", "cwd": "클라우드 세션",
+                "session": sid, "title": snap.get("title") or "클라우드 세션", "last": round(at, 1),
+                "present": present,
+                "working": present and age < QUIET_TO_LOUNGE and any(w.get("mood") in busy_moods for w in workers),
+            })
+            if not present:
+                continue
+            for w in workers:
+                is_sub = bool(w.get("isSub"))
+                if is_sub and age > QUIET_TO_LOUNGE:
+                    continue   # 소식이 끊긴 세션: 서브에이전트는 퇴근
+                room, mood, detail = w.get("room") or "mydesk", w.get("mood") or "rest", w.get("detail") or ""
+                if age > QUIET_TO_LOUNGE and not is_sub:
+                    room, mood, detail = "lounge", "rest", "☕ 쉬는 중"
+                if room not in ROOM_POSE:
+                    room = "mydesk"
+                pose = {"talk": "talk", "listen": "listen"}.get(mood) or ("coffee" if room == "lounge" else
+                                                                            "idle" if mood == "rest" else ROOM_POSE[room])
+                w_at = (w.get("at") or 0) / 1000
+                agents.append({
+                    "id": "r" + hashlib.md5(f"{sid}/{w.get('id')}".encode("utf-8")).hexdigest()[:9],
+                    "session": sess_id, "name": w.get("name") or "Claude", "sub": is_sub,
+                    "room": room, "pose": pose, "detail": detail,
+                    "say": detail.removeprefix("💬 ") if mood == "talk" else "",
+                    "busy": mood == "think" and room != "lounge", "stuck": mood == "stuck",
+                    "thinks": 1, "tools": w.get("tools") or 0, "thinkSince": round(w_at, 1),
+                    "last": round(max(w_at, at), 1), "since": round(w_at, 1),
+                })
+            logs[sess_id] = [{"t": round((l.get("at") or 0) / 1000, 1), "who": l.get("who") or "", "sub": l.get("who") != "Claude",
+                              "text": l.get("text") or "", "kind": l.get("kind") or "tool"}
+                             for l in (snap.get("log") or []) if isinstance(l, dict)][-30:]
 
     @staticmethod
     def _view(a, session_id, room, pose, detail, now):
@@ -488,6 +580,39 @@ class Watcher:
                     self.version += 1
                     self.cond.notify_all()
             time.sleep(POLL_EVERY)
+
+
+# ───────────────────────── 클라우드 중계 (Firebase Realtime Database) ─────────────────────────
+
+class Relay:
+    """클라우드 세션의 mod 가 <OFFICE_RELAY>/sessions/<id> 에 올린 상태를 실시간으로 받아 Watcher 에 넣는다.
+    Firebase REST 스트리밍(Accept: text/event-stream)의 put/patch 이벤트를 그대로 따른다."""
+
+    def __init__(self, base, watcher):
+        self.url = base.rstrip("/") + "/sessions.json"
+        self.watcher = watcher
+        self.state = "연결 중"
+
+    def run(self):
+        while True:
+            try:
+                req = urllib.request.Request(self.url, headers={"Accept": "text/event-stream"})
+                with urllib.request.urlopen(req, timeout=90) as r:   # Firebase 는 30초마다 keep-alive
+                    self.state = "연결됨"
+                    event = None
+                    for raw in r:
+                        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                        if line.startswith("event:"):
+                            event = line[6:].strip()
+                        elif line.startswith("data:") and event in ("put", "patch"):
+                            msg = json.loads(line[5:])
+                            self.watcher.remote_update(event, msg.get("path"), msg.get("data"))
+                        elif line.startswith("data:") and event in ("cancel", "auth_revoked"):
+                            raise RuntimeError(f"중계 거부: {event} (규칙·주소 확인)")
+            except Exception as e:   # 끊기면 잠시 뒤 다시
+                self.state = f"끊김 · {e}"
+                print("⚠ 클라우드 중계:", e, file=sys.stderr)
+            time.sleep(RELAY_RETRY)
 
 
 # ───────────────────────── HTTP / SSE ─────────────────────────
@@ -696,7 +821,13 @@ def main():
     ap.add_argument("--user", default=None, help="'내 자리'에 표시할 이름")
     ap.add_argument("--demo", action="store_true", help="가짜 세션으로 미리보기")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--relay", default=os.environ.get("OFFICE_RELAY"),
+                    help="클라우드 세션 중계 주소 (Firebase DB 주소/비밀 키). 환경 변수 OFFICE_RELAY")
+    ap.add_argument("--new-relay-key", action="store_true", help="중계 주소에 쓸 비밀 키를 하나 만들어 출력")
     args = ap.parse_args()
+    if args.new_relay_key:
+        print(secrets.token_urlsafe(24))
+        return
 
     try:
         user = args.user or getpass.getuser()
@@ -705,12 +836,16 @@ def main():
     root = start_demo() if args.demo else Path(args.root).expanduser()
     watcher = Watcher(root)
     threading.Thread(target=watcher.loop, daemon=True).start()
+    if args.relay:
+        threading.Thread(target=Relay(args.relay, watcher).run, daemon=True).start()
 
     server = ThreadingHTTPServer((args.host, args.port), make_handler(watcher, user))
     server.daemon_threads = True
     url = f"http://{args.host}:{args.port}"
     print(f"🏢 Claude Office 영업 시작 → {url}")
     print(f"   지켜보는 폴더: {root}{'  (데모)' if args.demo else ''}")
+    if args.relay:
+        print(f"   클라우드 세션: {args.relay.split('/')[2]} 에서 받는 중")
     print("   종료: Ctrl+C")
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()

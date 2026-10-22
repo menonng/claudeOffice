@@ -59,10 +59,40 @@ python office.py --root D:/somewhere/.claude/projects --user VSM
 - 파이썬(`python3` · `python` · `py` 중 있는 것)이 필요합니다. 내 컴퓨터에서 도는 세션(CLI · 데스크톱)에서만 볼 수 있고, 클라우드 세션은 서버가 클라우드에 떠서 보이지 않습니다
 - 패널 안에 3D 를 그대로 넣지 않는 이유: mod 패널은 스크립트를 실행하지 않아 WebGL 을 그릴 수 없습니다
 
+## 클라우드 세션도 보기 (선택)
+
+claude.ai/code 의 클라우드 세션은 기록이 클라우드에 있어 그대로는 안 보입니다. 클라우드 세션의 mod 가 상태(누가 · 어느 방 · 무엇을, 짧은 한 줄)를 **Firebase 실시간 DB** 로 올리고, 내 컴퓨터의 `office.py` 가 그것을 실시간으로 받아 **☁ 층**으로 보여줍니다. 파일 내용은 보내지 않습니다.
+
+1. **Firebase 실시간 DB 만들기 (무료)**
+   - https://console.firebase.google.com → 프로젝트 추가
+   - 빌드 → Realtime Database → 데이터베이스 만들기 → 위치(예: 싱가포르) → 잠금 모드로 시작
+   - 규칙 탭에 아래를 붙여 넣고 게시: 24자 이상 비밀 키 아래만 읽고 쓸 수 있고, 맨 위 목록은 아무도 못 봄
+     ```json
+     { "rules": { "$key": { ".read": "$key.length >= 24", ".write": "$key.length >= 24" } } }
+     ```
+   - 데이터 탭 위의 DB 주소를 복사 (예: `https://내프로젝트-default-rtdb.asia-southeast1.firebasedatabase.app`)
+2. **중계 주소 만들기**: `python office.py --new-relay-key` 로 비밀 키를 만들고, `DB 주소/비밀 키` 를 중계 주소로 씀
+   (예: `https://내프로젝트-default-rtdb.asia-southeast1.firebasedatabase.app/Xq3...`)
+3. **내 컴퓨터**: 환경 변수 `OFFICE_RELAY` 에 중계 주소를 넣고 Claude Code 를 다시 시작
+   (Windows: `setx OFFICE_RELAY "중계 주소"` 후 새 창 · 앱 재시작. 또는 `python office.py --relay 중계 주소`)
+4. **클라우드 환경** (claude.ai/code 세션 제목의 환경 메뉴 → 편집)
+   - 환경 변수: `OFFICE_RELAY=중계 주소`
+   - 네트워크: 허용 도메인에 DB 주소의 호스트 (예: `내프로젝트-default-rtdb.asia-southeast1.firebasedatabase.app`)
+5. **클라우드 세션에서 mod 켜기**: 작업할 저장소의 `.claude/settings.json` 에 추가하고 커밋
+   ```json
+   {
+     "extraKnownMarketplaces": { "office-mods": { "source": { "source": "github", "repo": "menonng/claudeOffice" } } },
+     "enabledPlugins": { "agent-office@office-mods": true }
+   }
+   ```
+   이 저장소가 비공개면 클라우드 세션이 받아오지 못하니, 공개로 바꾸거나 클라우드 환경이 이 저장소에 접근할 수 있어야 합니다.
+
+클라우드 세션 패널 맨 위에 `☁ 클라우드 → 내 컴퓨터 3D 사무실 보내는 중` 이 뜨면 연결된 것입니다. 못 보내면 그 아래 줄에 이유가 나옵니다.
+
 ## 파일
 
 ```
-office.py              서버 (tail + SSE)
+office.py              서버 (tail + SSE, 클라우드 세션 중계 받기)
 office.html            3D 화면
 vendor/three.*.js      three.js r186 (MIT, vendor/three-LICENSE.txt)
 .claude-plugin/        mod 매니페스트(plugin.json)와 마켓플레이스(marketplace.json)
