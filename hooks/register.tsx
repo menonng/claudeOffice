@@ -15,6 +15,7 @@ const SUB_LEAVE = 4_000 // 서브에이전트가 일을 마치고 퇴근하기�
 const LOG_KEEP = 40
 const THINK_TO_MEETING = 15_000 // 이만큼 넘게 고민하면 회의실로 (office.py 와 같은 규칙)
 const MEETING_THINKERS = 3 // 이만큼 이상 함께 고민하면 다 같이 회의실로
+const PUSH_EVERY = 1_000 // 클라우드 세션: 중계로 상태를 올리는 최소 간격
 
 const AGENT_TYPE_KO: Record<string, string> = {
   'general-purpose': '범용', Explore: '탐색', Plan: '설계', 'claude-code-guide': '가이드', 'statusline-setup': '설정',
@@ -28,6 +29,14 @@ const server = atom({ plugin: 'agent-office', key: 'server' } as const, { state:
 let child: AsyncGenerator<unknown, unknown> | null = null
 let python = ''
 
+// 클라우드 세션: office.py 대신, 내 컴퓨터의 3D 사무실이 구독하는 중계(OFFICE_RELAY, Firebase DB)로 상태를 올림
+let isCloud = false
+let relay: string | null = null
+let cloudId = ''
+let project = ''
+let title = ''
+let pushQueued = false
+
 /** 사무실 상태를 한 번에 고침 (복사본에 fn 적용) */
 async function edit($: EngineInterface, fn: (o: Office, now: number) => void) {
   const now = await $.clock.now()
@@ -36,6 +45,25 @@ async function edit($: EngineInterface, fn: (o: Office, now: number) => void) {
     fn(next, now)
     next.log = next.log.slice(-LOG_KEEP)
     return next
+  })
+  push($)
+}
+
+/** 클라우드 세션이면 상태를 중계로 올림 (PUSH_EVERY 에 한 번, 마지막 상태로) */
+function push($: EngineInterface) {
+  if (!relay || pushQueued) return
+  pushQueued = true
+  $.clock.after(PUSH_EVERY, async () => {
+    pushQueued = false
+    const o = await read($, office)
+    const body = JSON.stringify({ project, title, at: await $.clock.now(), workers: o.workers, log: o.log.slice(-8) })
+    try {
+      const r = await $.http.fetch(`${relay}/sessions/${cloudId}.json`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body })
+      if (!r.ok) await setServer($, 'failed', `중계가 거부했어요 (${r.status}). 주소의 비밀 키와 DB 규칙을 확인해 주세요`)
+      else if ((await read($, server)).state !== 'running') await setServer($, 'running', '내 컴퓨터의 3D 사무실로 보내는 중')
+    } catch {
+      await setServer($, 'failed', '중계에 연결하지 못했어요. 클라우드 환경의 네트워크 허용 도메인에 중계 주소를 넣어 주세요')
+    }
   })
 }
 
@@ -133,15 +161,36 @@ export const register: Register = on => {
     await $.command.register({ name: 'office', description: '3D 사무실을 브라우저에 열고 Claude Office 패널 보기' })
     await edit($, (o, now) => void mainOf(o, now))
     void $.ui.open({ id: PANE, title: TITLE })
-    if (e.isInteractive) {
+    isCloud = (await $.env.get('CLAUDE_CODE_REMOTE')) === 'true'
+    project = e.cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || e.cwd
+    if (isCloud) {
+      // 클라우드 컨테이너에서 띄운 office.py 는 내 컴퓨터에서 볼 수 없으니, 중계로만 보냄
+      const url = await $.env.get('OFFICE_RELAY')
+      relay = url ? url.replace(/\/+$/, '') : null
+      cloudId = (await $.env.get('CLAUDE_CODE_REMOTE_SESSION_ID')) || `cloud-${await $.clock.now()}`
+      await setServer($, relay ? 'starting' : 'stopped', relay ? '내 컴퓨터의 3D 사무실로 보내는 중' : '클라우드 세션이에요. OFFICE_RELAY 를 설정하면 내 컴퓨터의 3D 사무실에 보여요')
+      push($)
+    } else if (e.isInteractive) {
       void ensureServer($, true)
       $.clock.every(CHECK_EVERY, () => ensureServer($, false))
     }
     return next(e)
   })
 
+  on('session.end', async ($, e, next) => {
+    if (relay) {
+      try {
+        await $.http.fetch(`${relay}/sessions/${cloudId}/ended.json`, { method: 'PUT', body: 'true' })
+      } catch {
+        // 세션이 끝나는 중이라 다시 시도하지 않음 (30분 뒤 사무실에서 저절로 빠짐)
+      }
+    }
+    return next(e)
+  })
+
   on('command.run', { command: 'office' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE })
+    if (isCloud) return { text: relay ? '클라우드 세션 상태를 내 컴퓨터의 3D 사무실로 보내는 중이에요.' : '클라우드 세션이에요. OFFICE_RELAY 를 설정하면 내 컴퓨터의 3D 사무실에 보여요.' }
     await ensureServer($, false)
     const opened = await openBrowser($)
     return { text: opened ? `3D 사무실을 열었어요: ${URL}` : `브라우저를 열지 못했어요. 주소창에 ${URL} 를 넣어 주세요.` }
@@ -154,6 +203,7 @@ export const register: Register = on => {
       if (agentId === undefined) {
         const w = mainOf(o, now)
         if (e.text.trim()) {
+          if (!title) title = short(e.text, 40)
           set(w, now, 'mydesk', 'listen', '📝 ' + short(e.text, 40))
           log(o, now, w, '📝 ' + short(e.text, 90), 'prompt')
         } else {
@@ -267,15 +317,21 @@ export const register: Register = on => {
       w.mood === 'think' && (thinkers.length >= MEETING_THINKERS || now - w.at > THINK_TO_MEETING) ? 'meeting' : w.room
     const mood = (w: Worker) =>
       w.mood === 'think' ? '💭 고민 중' : w.mood === 'stuck' ? w.detail : w.detail
-    const stateText = { starting: '여는 중…', running: '열려 있음', stopped: '꺼짐', failed: '열지 못함' }[srv.state]
+    const stateText = isCloud
+      ? { starting: '보내는 중…', running: '보내는 중', stopped: '꺼짐', failed: '못 보냄' }[srv.state]
+      : { starting: '여는 중…', running: '열려 있음', stopped: '꺼짐', failed: '열지 못함' }[srv.state]
     const stateColor = { starting: PAL.orange, running: PAL.green, stopped: undefined, failed: PAL.red }[srv.state]
     return (
       <Box flexDirection="column" gap="sm">
-        <Box flexDirection="row" gap="sm" alignItems="center">
-          <Text color={stateColor} bold>● 3D 사무실 {stateText}</Text>
-          <Text dimColor wrap="truncate">{srv.url}</Text>
-          <Button key="open" label="브라우저에서 열기" onPress={async () => { await ensureServer($, false); await openBrowser($) }} />
-        </Box>
+        {isCloud ? (
+          <Text color={stateColor} bold>● ☁ 클라우드 → 내 컴퓨터 3D 사무실 {stateText}</Text>
+        ) : (
+          <Box flexDirection="row" gap="sm" alignItems="center">
+            <Text color={stateColor} bold>● 3D 사무실 {stateText}</Text>
+            <Text dimColor wrap="truncate">{srv.url}</Text>
+            <Button key="open" label="브라우저에서 열기" onPress={async () => { await ensureServer($, false); await openBrowser($) }} />
+          </Box>
+        )}
         {srv.note ? <Text dimColor wrap="truncate">{srv.note}</Text> : null}
         <Box flexDirection="column">
           {o.workers.map(w => {
