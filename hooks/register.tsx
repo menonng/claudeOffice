@@ -162,7 +162,8 @@ export const register: Register = on => {
     await edit($, (o, now) => void mainOf(o, now))
     void $.ui.open({ id: PANE, title: TITLE })
     isCloud = (await $.env.get('CLAUDE_CODE_REMOTE')) === 'true'
-    project = e.cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || e.cwd
+    // worktree(…/.claude/worktrees/<이름>)는 본 저장소 층으로
+    project = e.cwd.replace(/[/\\]\.claude[/\\]worktrees[/\\].*$/, '').replace(/[/\\]+$/, '').split(/[/\\]/).pop() || e.cwd
     if (isCloud) {
       // 클라우드 컨테이너에서 띄운 office.py 는 내 컴퓨터에서 볼 수 없으니, 중계로만 보냄
       const url = await $.env.get('OFFICE_RELAY')

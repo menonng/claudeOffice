@@ -27,11 +27,13 @@ Claude Office v4 — Claude Code가 지금 뭘 하는지 3D 사무실로 보여�
 """
 import argparse
 import collections
+import functools
 import getpass
 import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import sys
 import tempfile
@@ -141,8 +143,43 @@ def parse_ts(ts):
 
 
 def project_from_dir(name):
+    name = re.split(r"--claude-worktrees-|-\.?claude-worktrees-", name)[0]   # worktree → 본 저장소
     parts = [p for p in name.split("-") if p]
     return parts[-1] if parts else name
+
+
+@functools.lru_cache(maxsize=512)
+def repo_root(cwd):
+    """cwd 가 속한 저장소의 본 폴더. git worktree 나 하위 폴더에서 연 세션도 본 저장소로 모음."""
+    d = os.path.abspath(cwd)
+    while os.path.isdir(cwd):
+        git = os.path.join(d, ".git")
+        if os.path.isdir(git):
+            return d
+        if os.path.isfile(git):
+            try:
+                with open(git, encoding="utf-8") as f:
+                    target = f.read().strip().removeprefix("gitdir:").strip()
+            except OSError:
+                return d
+            gitdir = os.path.normpath(os.path.join(d, target))   # <본 저장소>/.git/worktrees/<이름>
+            main_git = os.path.dirname(os.path.dirname(gitdir))
+            if os.path.basename(os.path.dirname(gitdir)) == "worktrees" and main_git.endswith(".git"):
+                return os.path.dirname(main_git)
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            break
+        d = up
+    # 이 컴퓨터에 없는 경로: 이름으로 짐작
+    m = re.match(r"(.*?)[\\/]\.claude[\\/]worktrees[\\/]", cwd) or re.search(r"\.claude-worktrees[\\/]([^\\/]+)", cwd)
+    if m:
+        return m.group(1)
+    return cwd
+
+
+def project_of(cwd):
+    return re.split(r"[\\/]", repo_root(cwd.rstrip("/\\")).rstrip("/\\"))[-1] or cwd
 
 
 # ───────────────────────── 세션 상태 ─────────────────────────
@@ -294,7 +331,7 @@ class Watcher:
         cwd = obj.get("cwd")
         if isinstance(cwd, str) and cwd and not is_sub:
             a.cwd = cwd
-            a.project = os.path.basename(cwd.rstrip("/\\")) or a.project
+            a.project = project_of(cwd) or a.project
         return a
 
     def _log(self, a, ts, text, kind="tool"):
@@ -455,6 +492,10 @@ class Watcher:
             if now - a.last < 6 * 3600:
                 logs[a.id] = list(self.logs.get(a.id, []))[-30:]
         self._build_remote(now, sessions, agents, logs)
+        # 같은 저장소는 한 층: 대소문자만 다른 이름(클라우드 clone 은 소문자)도 합치고, 내 컴퓨터 쪽 이름을 씀
+        names = {}
+        for s in sorted(sessions, key=lambda s: s["cwd"].startswith("☁")):
+            s["project"] = names.setdefault(s["project"].lower(), s["project"])
         # 오래 고민하거나, 한 세션에서 여럿이 함께 고민하면 회의실에 모여서 고민
         thinking = collections.defaultdict(list)
         for v in agents:
@@ -519,8 +560,8 @@ class Watcher:
             present = age < GONE_AFTER and not snap.get("ended")
             busy_moods = ("work", "think", "listen", "stuck")
             sessions.append({
-                "id": sess_id, "project": f"☁ {snap.get('project') or '클라우드'}", "cwd": "클라우드 세션",
-                "session": sid, "title": snap.get("title") or "클라우드 세션", "last": round(at, 1),
+                "id": sess_id, "project": snap.get("project") or "클라우드", "cwd": "☁ 클라우드 세션",
+                "session": sid, "title": f"☁ {snap.get('title') or '클라우드 세션'}", "last": round(at, 1),
                 "present": present,
                 "working": present and age < QUIET_TO_LOUNGE and any(w.get("mood") in busy_moods for w in workers),
             })

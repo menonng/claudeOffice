@@ -56,7 +56,7 @@ test('클라우드 세션은 office.py 를 띄우지 않고 상태를 중계로 
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {} }))
 
-  await $.session.start({ cwd: '/work/citiesCraftlines', surface: 'desktop', isInteractive: true })
+  await $.session.start({ cwd: '/work/citiesCraftlines/.claude/worktrees/agent-x', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'npm test', description: '테스트 실행' })
   await clock.advance(1_500)
 
