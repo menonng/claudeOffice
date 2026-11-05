@@ -27,11 +27,13 @@ Claude Office v4 — Claude Code가 지금 뭘 하는지 3D 사무실로 보여�
 """
 import argparse
 import collections
+import functools
 import getpass
 import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import sys
 import tempfile
@@ -141,8 +143,66 @@ def parse_ts(ts):
 
 
 def project_from_dir(name):
+    name = re.split(r"--claude-worktrees-|-\.?claude-worktrees-", name)[0]   # worktree → 본 저장소
     parts = [p for p in name.split("-") if p]
     return parts[-1] if parts else name
+
+
+HOME = os.path.normcase(os.path.expanduser("~"))
+PROJECT_MARKERS = (".claude", "CLAUDE.md")
+
+
+@functools.lru_cache(maxsize=512)
+def project_root(cwd):
+    """cwd 가 속한 프로젝트의 맨 바깥 폴더.
+
+    git 저장소면 본 저장소 폴더(worktree 도 본 저장소로), 아니면 홈 폴더 아래에서
+    .claude 나 CLAUDE.md 가 있는 가장 바깥 폴더. 둘 다 없으면 cwd 그대로."""
+    if not os.path.isdir(cwd):
+        # 이 컴퓨터에 없는 경로: 이름으로 짐작
+        m = re.match(r"(.*?)[\\/]\.claude[\\/]worktrees[\\/]", cwd) or re.search(r"\.claude-worktrees[\\/]([^\\/]+)", cwd)
+        return m.group(1) if m else cwd
+    d = top = os.path.abspath(cwd)
+    while True:
+        git = os.path.join(d, ".git")
+        if os.path.isdir(git):
+            return d
+        if os.path.isfile(git):
+            try:
+                with open(git, encoding="utf-8") as f:
+                    target = f.read().strip().removeprefix("gitdir:").strip()
+            except OSError:
+                return d
+            gitdir = os.path.normpath(os.path.join(d, target))   # <본 저장소>/.git/worktrees/<이름>
+            main_git = os.path.dirname(os.path.dirname(gitdir))
+            if os.path.basename(os.path.dirname(gitdir)) == "worktrees" and main_git.endswith(".git"):
+                return os.path.dirname(main_git)
+            return d
+        up = os.path.dirname(d)
+        if up == d or os.path.normcase(d) == HOME:   # 드라이브 맨 위와 홈 폴더(~/.claude 가 있음)는 프로젝트가 아님
+            return top
+        if any(os.path.exists(os.path.join(d, m)) for m in PROJECT_MARKERS):
+            top = d
+        d = up
+
+
+def _path_key(p):
+    return p.replace("\\", "/").rstrip("/").lower()
+
+
+def floor_roots(roots):
+    """프로젝트 폴더들 → 층이 될 폴더. 다른 폴더 안에 있는 폴더는 바깥 폴더의 층으로."""
+    keys = {r: _path_key(r) for r in roots}
+    home = _path_key(HOME)
+    outer = sorted({k for k in keys.values() if "/" in k and k != home and not home.startswith(k + "/")}, key=len)
+    by_key = {}
+    for r, k in sorted(keys.items(), key=lambda x: len(x[1])):
+        by_key.setdefault(k, r)
+    out = {}
+    for r, k in keys.items():
+        anc = next((o for o in outer if k == o or k.startswith(o + "/")), k)
+        out[r] = by_key[anc]
+    return out
 
 
 # ───────────────────────── 세션 상태 ─────────────────────────
@@ -156,6 +216,7 @@ class Agent:
         self.parent_session = parent_session
         self.project = project
         self.cwd = ""
+        self.root = ""
         self.title = ""
         self.first_prompt = ""
         self.label = ""
@@ -292,9 +353,10 @@ class Watcher:
                 a.session = path.stem
             self.agents[key] = a
         cwd = obj.get("cwd")
-        if isinstance(cwd, str) and cwd and not is_sub:
+        if isinstance(cwd, str) and cwd and not is_sub and not a.cwd:
+            # 세션을 연 폴더로 고정: 도중에 cd 로 하위 폴더에 들어가도 층이 바뀌지 않게
             a.cwd = cwd
-            a.project = os.path.basename(cwd.rstrip("/\\")) or a.project
+            a.root = project_root(cwd.rstrip("/\\")) or cwd
         return a
 
     def _log(self, a, ts, text, kind="tool"):
@@ -455,6 +517,16 @@ class Watcher:
             if now - a.last < 6 * 3600:
                 logs[a.id] = list(self.logs.get(a.id, []))[-30:]
         self._build_remote(now, sessions, agents, logs)
+        # 한 프로젝트는 한 층: 안쪽 폴더에서 연 세션은 바깥 폴더 층으로
+        roots = {a.id: a.root for a in self.agents.values() if not a.is_sub and a.root}
+        floors = floor_roots(set(roots.values()))
+        for s in sessions:
+            if s["id"] in roots:
+                s["project"] = re.split(r"[\\/]", floors[roots[s["id"]]].rstrip("/\\"))[-1] or s["project"]
+        # 대소문자만 다른 이름(클라우드 clone 은 소문자)도 합치고, 내 컴퓨터 쪽 이름을 씀
+        names = {}
+        for s in sorted(sessions, key=lambda s: s["cwd"].startswith("☁")):
+            s["project"] = names.setdefault(s["project"].lower(), s["project"])
         # 오래 고민하거나, 한 세션에서 여럿이 함께 고민하면 회의실에 모여서 고민
         thinking = collections.defaultdict(list)
         for v in agents:
@@ -519,8 +591,8 @@ class Watcher:
             present = age < GONE_AFTER and not snap.get("ended")
             busy_moods = ("work", "think", "listen", "stuck")
             sessions.append({
-                "id": sess_id, "project": f"☁ {snap.get('project') or '클라우드'}", "cwd": "클라우드 세션",
-                "session": sid, "title": snap.get("title") or "클라우드 세션", "last": round(at, 1),
+                "id": sess_id, "project": snap.get("project") or "클라우드", "cwd": "☁ 클라우드 세션",
+                "session": sid, "title": f"☁ {snap.get('title') or '클라우드 세션'}", "last": round(at, 1),
                 "present": present,
                 "working": present and age < QUIET_TO_LOUNGE and any(w.get("mood") in busy_moods for w in workers),
             })
