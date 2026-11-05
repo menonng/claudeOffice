@@ -148,11 +148,22 @@ def project_from_dir(name):
     return parts[-1] if parts else name
 
 
+HOME = os.path.normcase(os.path.expanduser("~"))
+PROJECT_MARKERS = (".claude", "CLAUDE.md")
+
+
 @functools.lru_cache(maxsize=512)
-def repo_root(cwd):
-    """cwd 가 속한 저장소의 본 폴더. git worktree 나 하위 폴더에서 연 세션도 본 저장소로 모음."""
-    d = os.path.abspath(cwd)
-    while os.path.isdir(cwd):
+def project_root(cwd):
+    """cwd 가 속한 프로젝트의 맨 바깥 폴더.
+
+    git 저장소면 본 저장소 폴더(worktree 도 본 저장소로), 아니면 홈 폴더 아래에서
+    .claude 나 CLAUDE.md 가 있는 가장 바깥 폴더. 둘 다 없으면 cwd 그대로."""
+    if not os.path.isdir(cwd):
+        # 이 컴퓨터에 없는 경로: 이름으로 짐작
+        m = re.match(r"(.*?)[\\/]\.claude[\\/]worktrees[\\/]", cwd) or re.search(r"\.claude-worktrees[\\/]([^\\/]+)", cwd)
+        return m.group(1) if m else cwd
+    d = top = os.path.abspath(cwd)
+    while True:
         git = os.path.join(d, ".git")
         if os.path.isdir(git):
             return d
@@ -168,18 +179,30 @@ def repo_root(cwd):
                 return os.path.dirname(main_git)
             return d
         up = os.path.dirname(d)
-        if up == d:
-            break
+        if up == d or os.path.normcase(d) == HOME:   # 드라이브 맨 위와 홈 폴더(~/.claude 가 있음)는 프로젝트가 아님
+            return top
+        if any(os.path.exists(os.path.join(d, m)) for m in PROJECT_MARKERS):
+            top = d
         d = up
-    # 이 컴퓨터에 없는 경로: 이름으로 짐작
-    m = re.match(r"(.*?)[\\/]\.claude[\\/]worktrees[\\/]", cwd) or re.search(r"\.claude-worktrees[\\/]([^\\/]+)", cwd)
-    if m:
-        return m.group(1)
-    return cwd
 
 
-def project_of(cwd):
-    return re.split(r"[\\/]", repo_root(cwd.rstrip("/\\")).rstrip("/\\"))[-1] or cwd
+def _path_key(p):
+    return p.replace("\\", "/").rstrip("/").lower()
+
+
+def floor_roots(roots):
+    """프로젝트 폴더들 → 층이 될 폴더. 다른 폴더 안에 있는 폴더는 바깥 폴더의 층으로."""
+    keys = {r: _path_key(r) for r in roots}
+    home = _path_key(HOME)
+    outer = sorted({k for k in keys.values() if "/" in k and k != home and not home.startswith(k + "/")}, key=len)
+    by_key = {}
+    for r, k in sorted(keys.items(), key=lambda x: len(x[1])):
+        by_key.setdefault(k, r)
+    out = {}
+    for r, k in keys.items():
+        anc = next((o for o in outer if k == o or k.startswith(o + "/")), k)
+        out[r] = by_key[anc]
+    return out
 
 
 # ───────────────────────── 세션 상태 ─────────────────────────
@@ -193,6 +216,7 @@ class Agent:
         self.parent_session = parent_session
         self.project = project
         self.cwd = ""
+        self.root = ""
         self.title = ""
         self.first_prompt = ""
         self.label = ""
@@ -329,9 +353,10 @@ class Watcher:
                 a.session = path.stem
             self.agents[key] = a
         cwd = obj.get("cwd")
-        if isinstance(cwd, str) and cwd and not is_sub:
+        if isinstance(cwd, str) and cwd and not is_sub and not a.cwd:
+            # 세션을 연 폴더로 고정: 도중에 cd 로 하위 폴더에 들어가도 층이 바뀌지 않게
             a.cwd = cwd
-            a.project = project_of(cwd) or a.project
+            a.root = project_root(cwd.rstrip("/\\")) or cwd
         return a
 
     def _log(self, a, ts, text, kind="tool"):
@@ -492,7 +517,13 @@ class Watcher:
             if now - a.last < 6 * 3600:
                 logs[a.id] = list(self.logs.get(a.id, []))[-30:]
         self._build_remote(now, sessions, agents, logs)
-        # 같은 저장소는 한 층: 대소문자만 다른 이름(클라우드 clone 은 소문자)도 합치고, 내 컴퓨터 쪽 이름을 씀
+        # 한 프로젝트는 한 층: 안쪽 폴더에서 연 세션은 바깥 폴더 층으로
+        roots = {a.id: a.root for a in self.agents.values() if not a.is_sub and a.root}
+        floors = floor_roots(set(roots.values()))
+        for s in sessions:
+            if s["id"] in roots:
+                s["project"] = re.split(r"[\\/]", floors[roots[s["id"]]].rstrip("/\\"))[-1] or s["project"]
+        # 대소문자만 다른 이름(클라우드 clone 은 소문자)도 합치고, 내 컴퓨터 쪽 이름을 씀
         names = {}
         for s in sorted(sessions, key=lambda s: s["cwd"].startswith("☁")):
             s["project"] = names.setdefault(s["project"].lower(), s["project"])
